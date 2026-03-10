@@ -1,0 +1,551 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=DM+Sans:wght@400;500;600;700&display=swap');
+
+:root{
+  --background: hsl(210 20% 98%);
+  --foreground: hsl(210 50% 10%);
+
+  --card: hsl(0 0% 100%);
+  --border: hsl(210 20% 90%);
+
+  --primary: hsl(205 80% 24%);
+  --muted: hsl(210 20% 94%);
+  --muted-foreground: hsl(210 15% 50%);
+
+  --success: hsl(152 60% 40%);
+  --warning: hsl(38 92% 50%);
+  --info: hsl(205 80% 55%);
+  --danger: hsl(0 72% 51%);
+
+  --sidebar: hsl(205 80% 14%);
+  --sidebar-accent: hsl(205 70% 20%);
+  --sidebar-foreground: hsl(210 20% 90%);
+
+  --radius: 14px;
+}
+
+*{ box-sizing: border-box; }
+
+body{
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Inter, sans-serif;
+  margin:0;
+}
+
+h1,h2,h3,h4,h5,h6{ font-family: "DM Sans", sans-serif; }
+
+/* ===== LAYOUT ===== */
+.app{
+  display:flex;
+  min-height:100vh;
+  overflow:hidden;
+}
+
+/* ===== SIDEBAR ===== */
+.sidebar{
+  width:260px;
+  background: linear-gradient(180deg, var(--sidebar), hsl(205 70% 12%));
+  color: var(--sidebar-foreground);
+  padding:18px 14px;
+  border-right: 1px solid hsl(205 60% 22%);
+}
+
+.brand{
+  display:flex;
+  gap:10px;
+  align-items:center;
+  padding:6px 8px 16px;
+}
+.brand-badge{
+  width:40px;height:40px;border-radius:12px;
+  background: rgba(255,255,255,.10);
+  display:flex;align-items:center;justify-content:center;
+  font-size:18px;
+}
+.brand-title{ font-weight:900; line-height:1.1; color:#fff; }
+.brand-sub{ font-size:12px; opacity:.78; }
+
+.nav-side .nav-link{
+  color: rgba(255,255,255,.78);
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin: 4px 0;
+  display:flex;
+  gap:10px;
+  align-items:center;
+  text-decoration:none;
+}
+.nav-side .nav-link:hover{ background: rgba(255,255,255,.08); color:#fff; }
+.nav-side .nav-link.active{
+  background: rgba(255,255,255,.10);
+  color:#fff;
+}
+
+.nav-ico{
+  width:22px;
+  display:inline-flex;
+  justify-content:center;
+}
+
+.sidebar-user{
+  margin-top:auto;
+  padding-top:14px;
+  border-top:1px solid rgba(255,255,255,.10);
+}
+
+/* ===== MAIN ===== */
+.mainwrap{
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  min-width:0;
+}
+
+.topbar{
+  height:64px;
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  padding: 0 18px;
+  background: transparent;
+}
+
+.avatar{
+  width:34px;height:34px;border-radius:999px;
+  background: var(--primary);
+  color:#fff;
+  display:flex;align-items:center;justify-content:center;
+  font-weight:800;
+  font-size:12px;
+}
+
+.content{
+  flex:1;
+  overflow:auto;
+  padding: 18px 22px 28px;
+}
+
+/* ===== Helpers (max widths + spacing) ===== */
+.page-max-4xl{ max-width: 896px; margin: 0 auto; }   /* ~ max-w-4xl */
+.page-max-6xl{ max-width: 1152px; margin: 0 auto; }  /* ~ max-w-6xl */
+.space-y-6 > * + *{ margin-top: 24px; }
+
+/* ===== TITLES ===== */
+.page-title{ font-size:24px; font-weight:800; margin:0; }
+.page-subtitle{ color: var(--muted-foreground); font-size:13px; margin-top:4px; }
+.section-title{ font-size:13px; font-weight:700; margin:0; }
+
+/* ===== Cards ===== */
+.glass-card{
+  background: rgba(255,255,255,.80);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(226,232,240,.7);
+  box-shadow: 0 1px 2px rgba(15,23,42,.05);
+  border-radius: 14px;
+}
+
+.stat-gradient{
+  background: linear-gradient(135deg, rgba(13,71,121,.10), rgba(13,148,136,.10));
+}
+
+/* ===== Back link ===== */
+.back-link{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  font-size:13px;
+  color: var(--muted-foreground);
+  text-decoration:none;
+}
+.back-link:hover{ color: var(--foreground); }
+
+/* ===== Pills (status) ===== */
+.pill{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size:12px;
+  font-weight:600;
+  white-space:nowrap;
+}
+.pill-success{ background: rgba(46,204,113,.15); color: var(--success); }
+.pill-info{ background: rgba(52,152,219,.15); color: var(--info); }
+.pill-warning{ background: rgba(245,158,11,.15); color: var(--warning); }
+.pill-danger{ background: rgba(239,68,68,.15); color: var(--danger); }
+
+/* ===== Inputs ===== */
+.form-label-soft{
+  font-weight:700;
+  font-size:12px;
+  color: var(--muted-foreground);
+  margin-bottom:6px;
+}
+
+.form-control, .form-select{
+  border-radius: 12px;
+  border-color: var(--border);
+  background: rgba(255,255,255,.92);
+}
+
+.form-control:focus, .form-select:focus{
+  box-shadow: 0 0 0 .2rem rgba(13,71,121,.12);
+  border-color: rgba(13,71,121,.35);
+}
+
+/* ===== Icon box ===== */
+.icon-box{
+  width:56px;height:56px;
+  border-radius: 14px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+
+/* ===== Fuel bar ===== */
+.fuel-track{
+  width:100%;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--muted);
+  overflow:hidden;
+}
+.fuel-track-thin{ height: 8px; }
+
+.fuel-bar{
+  height:100%;
+  border-radius:999px;
+  transition: width .2s ease;
+}
+.fuel-high{ background: var(--success); }
+.fuel-mid{ background: var(--warning); }
+.fuel-low{ background: var(--danger); }
+
+/* ===== Info labels/values ===== */
+.info-label{
+  font-size:12px;
+  color: var(--muted-foreground);
+}
+.info-value{
+  font-size:14px;
+  font-weight:600;
+  color: var(--foreground);
+}
+
+/* ===== Helpers ===== */
+.min-w-0{ min-width: 0; }
+
+/* ===== Veículos list cards ===== */
+.vehicle-title-link{
+  display:inline-block;
+  font-weight: 800;
+  font-size: 15px;
+  color: var(--foreground);
+  text-decoration: none;
+}
+.vehicle-title-link:hover{ text-decoration: underline; }
+
+.vehicle-grid{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 16px;
+}
+
+.vehicle-card-clean{
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.vehicle-card-clean:hover{
+  transform: translateY(-1px);
+  box-shadow: 0 10px 26px rgba(15,23,42,.08);
+}
+
+/* ===== Searchbox ===== */
+.searchbox{
+  position: relative;
+}
+.search-ico{
+  position:absolute;
+  left:14px;
+  top:50%;
+  transform: translateY(-50%);
+  opacity:.7;
+}
+.searchbox .form-control{
+  padding-left: 42px;
+}
+
+/* ===== Chips ===== */
+.chips{
+  display:flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.chip{
+  display:inline-flex;
+  align-items:center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(226,232,240,.55);
+  color: var(--muted-foreground);
+  text-decoration:none;
+  font-weight:600;
+  font-size: 13px;
+}
+.chip:hover{
+  color: var(--foreground);
+  background: rgba(226,232,240,.8);
+}
+.chip.active{
+  background: rgba(13,71,121,.12);
+  color: var(--primary);
+}
+
+/* ===== Dashboard: KPI ===== */
+.kpi-label{
+  font-size: 12px;
+  color: var(--muted-foreground);
+  font-weight: 700;
+}
+.kpi-value{
+  font-size: 22px;
+  font-weight: 900;
+  margin-top: 2px;
+}
+.kpi-sub{
+  font-size: 13px;
+  color: var(--muted-foreground);
+  margin-top: 2px;
+}
+.kpi-ico{
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  background: rgba(255,255,255,.6);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size: 16px;
+}
+
+/* ===== Dashboard: legend dot ===== */
+.legend-dot{
+  width:10px;
+  height:10px;
+  border-radius: 999px;
+  display:inline-block;
+}
+
+/* ===== Dashboard: list rows ===== */
+.list-row{
+  display:flex;
+  align-items:center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  text-decoration:none;
+  color: inherit;
+  background: rgba(226,232,240,.35);
+  transition: background .12s ease, transform .12s ease;
+}
+.list-row:hover{
+  background: rgba(226,232,240,.55);
+  transform: translateY(-1px);
+}
+.list-row.no-link{ cursor: default; }
+.list-row.no-link:hover{ transform:none; }
+
+.list-ico{
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  background: rgba(52,152,219,.15);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size: 15px;
+}
+.list-ico.warn{
+  background: rgba(245,158,11,.15);
+}
+
+/* ===== Dashboard: badge pill ===== */
+.badge-pill{
+  display:inline-flex;
+  align-items:center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.badge-success-soft{ background: rgba(46,204,113,.15); color: var(--success); }
+.badge-info-soft{ background: rgba(52,152,219,.15); color: var(--info); }
+.badge-warning-soft{ background: rgba(245,158,11,.15); color: var(--warning); }
+.badge-danger-soft{ background: rgba(239,68,68,.15); color: var(--danger); }
+
+/* ===== Links suaves (cards) ===== */
+.link-soft{
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--primary);
+  text-decoration:none;
+}
+.link-soft:hover{
+  text-decoration: underline;
+}
+.avatar-soft{
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  background: rgba(226,232,240,.9);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-weight: 800;
+  color: var(--foreground);
+}
+
+.driver-lines{
+  display:flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.driver-line{
+  display:flex;
+  align-items:center;
+  gap: 8px;
+  font-size: 13px;
+  min-width: 0;
+}
+
+.driver-ico{
+  width: 18px;
+  display:inline-flex;
+  justify-content:center;
+  opacity: .85;
+}
+
+.driver-footer{
+  display:flex;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid rgba(226,232,240,.7);
+}
+
+/* ================================
+   Sidebar fixa + só o conteúdo rola
+   (cola no FINAL do style.css)
+==================================*/
+
+html, body { height: 100%; }
+
+body{
+  margin: 0;
+  overflow: hidden; /* impede rolagem do body; quem rola é .content */
+}
+
+/* container geral */
+.app{
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* sidebar fixa */
+.sidebar{
+  width: 260px;
+  height: 100vh;
+  flex: 0 0 260px;
+
+  /* mantém visual */
+  background: linear-gradient(180deg, var(--sidebar), hsl(205 70% 12%));
+  color: var(--sidebar-foreground);
+
+  overflow: hidden; /* sidebar não rola */
+}
+
+/* menu pode rolar sozinho se crescer muito (opcional e recomendado) */
+.nav-side{
+  flex: 1 1 auto;
+  overflow: auto;
+  padding-right: 6px; /* dá espaço pro scroll */
+}
+
+/* bloco do utilizador sempre em baixo */
+.sidebar-user{
+  margin-top: auto;   /* garante o "colado em baixo" */
+  flex: 0 0 auto;
+}
+
+/* área principal */
+.mainwrap{
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100vh;
+
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* topbar fixa */
+.topbar{
+  flex: 0 0 64px;
+}
+
+/* SÓ o conteúdo rola */
+.content{
+  flex: 1 1 auto;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.login-page {
+  min-height: 100vh;
+  position: relative;
+  overflow: hidden;
+}
+
+.login-bg{
+  position: fixed;
+  inset: 0;
+  background: url("../../img/login-bg.png") no-repeat center center;
+  background-size: cover;
+  z-index: 0;
+}
+
+.login-overlay{
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.35);
+  z-index: 1;
+}
+
+.login-wrap{
+  position: relative;
+  z-index: 2;
+  padding-top: 10vh;
+}
+
+.login-card{
+  border-radius: 16px;
+}
+
+.brand-badge i,
+.nav-ico i,
+.kpi-ico i,
+.list-ico i,
+.driver-ico i,
+.icon-box i {
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.brand-badge i { font-size: 18px; }
+.nav-ico i { font-size: 16px; }
+.kpi-ico i { font-size: 18px; }
+.list-ico i { font-size: 16px; }
