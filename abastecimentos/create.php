@@ -2,7 +2,7 @@
 require_once __DIR__ . "/../inc/auth.php";
 exigir_login();
 
-$active = 'abastecimento';
+$active = 'abastecimentos';
 require_once __DIR__ . "/../inc/database.php";
 require_once __DIR__ . "/../inc/header.php";
 
@@ -18,6 +18,8 @@ $litros = '';
 $preco_litro = '';
 $data_abastecimento = date('Y-m-d');
 $observacoes = '';
+$latitude = '';
+$longitude = '';
 
 $viaturas = [];
 $resV = mysqli_query($ligacao, "SELECT id, matricula, marca_modelo FROM viaturas ORDER BY marca_modelo ASC");
@@ -36,6 +38,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $preco_litro = trim($_POST['preco_litro'] ?? '');
   $data_abastecimento = trim($_POST['data_abastecimento'] ?? '');
   $observacoes = trim($_POST['observacoes'] ?? '');
+  $latitude = trim($_POST['latitude'] ?? '');
+  $longitude = trim($_POST['longitude'] ?? '');
 
   if ($viatura_id === '' || !ctype_digit($viatura_id)) $erros[] = "Selecione uma viatura.";
   if ($colaborador_id !== '' && !ctype_digit($colaborador_id)) $erros[] = "Motorista inválido.";
@@ -43,6 +47,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   if ($litros === '' || !is_numeric($litros) || (float)$litros <= 0) $erros[] = "Informe os litros (maior que 0).";
   if ($preco_litro === '' || !is_numeric($preco_litro) || (float)$preco_litro <= 0) $erros[] = "Informe o preço por litro (maior que 0).";
   if ($data_abastecimento === '') $erros[] = "A data é obrigatória.";
+
+  if (($latitude !== '' && !is_numeric($latitude)) || ($longitude !== '' && !is_numeric($longitude))) {
+    $erros[] = "As coordenadas são inválidas.";
+  }
+
+  if ($latitude !== '' && ((float)$latitude < -90 || (float)$latitude > 90)) {
+    $erros[] = "Latitude fora do intervalo válido.";
+  }
+
+  if ($longitude !== '' && ((float)$longitude < -180 || (float)$longitude > 180)) {
+    $erros[] = "Longitude fora do intervalo válido.";
+  }
 
   if (!$erros) {
     $vid = (int)$viatura_id;
@@ -56,12 +72,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $total = $lit * $pl;
 
     $data_s = mysqli_real_escape_string($ligacao, $data_abastecimento);
-    $obs_sql = ($observacoes === '') ? "NULL" : ("'".mysqli_real_escape_string($ligacao, $observacoes)."'");
+    $obs_sql = ($observacoes === '') ? "NULL" : ("'" . mysqli_real_escape_string($ligacao, $observacoes) . "'");
+    $lat_sql = ($latitude === '') ? "NULL" : number_format((float)$latitude, 7, '.', '');
+    $lng_sql = ($longitude === '') ? "NULL" : number_format((float)$longitude, 7, '.', '');
 
     $sql = "INSERT INTO abastecimentos
-              (viatura_id, colaborador_id, posto, combustivel, litros, preco_litro, total, data_abastecimento, observacoes)
+              (viatura_id, colaborador_id, posto, combustivel, litros, preco_litro, total, data_abastecimento, observacoes, latitude, longitude)
             VALUES
-              ($vid, $cid, '$posto_s', '$comb_s', $lit, $pl, $total, '$data_s', $obs_sql)";
+              ($vid, $cid, '$posto_s', '$comb_s', $lit, $pl, $total, '$data_s', $obs_sql, $lat_sql, $lng_sql)";
 
     if (mysqli_query($ligacao, $sql)) {
       header("Location: index.php?msg=criado");
@@ -72,6 +90,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
 }
 ?>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+<style>
+  #abastecimentoMap {
+    height: 340px;
+    border-radius: 16px;
+    overflow: hidden;
+    border: 1px solid rgba(15,23,42,.08);
+  }
+  .map-hint {
+    font-size: 13px;
+    color: #64748b;
+  }
+  .coords-box {
+    background: #f8fafc;
+    border: 1px solid rgba(15,23,42,.08);
+    border-radius: 12px;
+    padding: 10px 12px;
+    font-size: 13px;
+    color: #334155;
+  }
+</style>
 
 <div class="page-max-4xl space-y-6">
 
@@ -124,14 +165,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       <div class="col-12 col-md-6">
         <label class="form-label form-label-soft">Posto *</label>
-        <input name="posto" class="form-control form-control-lg" value="<?php echo h($posto); ?>" placeholder="Posto Shell - Av. Central" required>
+        <input name="posto" class="form-control form-control-lg" value="<?php echo h($posto); ?>" placeholder="BP Olhão / Galp Tavira / Cepsa Albufeira" required>
       </div>
 
       <div class="col-12 col-md-6">
         <label class="form-label form-label-soft">Combustível</label>
         <select name="combustivel" class="form-select form-select-lg">
           <?php foreach (['Diesel','Gasolina','Etanol','Elétrico','Híbrido','Outro'] as $c): ?>
-            <option value="<?php echo h($c); ?>" <?php echo ($combustivel===$c)?'selected':''; ?>><?php echo h($c); ?></option>
+            <option value="<?php echo h($c); ?>" <?php echo ($combustivel === $c) ? 'selected' : ''; ?>><?php echo h($c); ?></option>
           <?php endforeach; ?>
         </select>
       </div>
@@ -152,6 +193,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       </div>
 
       <div class="col-12">
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2 mb-2">
+          <div>
+            <label class="form-label form-label-soft mb-1">Localização do abastecimento</label>
+            <div class="map-hint">Clique no mapa ou use a geolocalização do navegador.</div>
+          </div>
+
+          <div class="d-flex gap-2">
+            <button type="button" class="btn btn-outline-primary btn-sm" id="btnGeo">Usar minha localização</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClearCoords">Limpar ponto</button>
+          </div>
+        </div>
+
+        <div id="abastecimentoMap"></div>
+
+        <input type="hidden" name="latitude" id="latitude" value="<?php echo h($latitude); ?>">
+        <input type="hidden" name="longitude" id="longitude" value="<?php echo h($longitude); ?>">
+
+        <div class="coords-box mt-3" id="coordsText">
+          Nenhuma coordenada selecionada.
+        </div>
+      </div>
+
+      <div class="col-12">
         <label class="form-label form-label-soft">Observações</label>
         <textarea name="observacoes" class="form-control" rows="4" placeholder="Opcional"><?php echo h($observacoes); ?></textarea>
       </div>
@@ -165,6 +229,99 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   </div>
 
 </div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  const initialLat = <?php echo ($latitude !== '' ? json_encode((float)$latitude) : 'null'); ?>;
+  const initialLng = <?php echo ($longitude !== '' ? json_encode((float)$longitude) : 'null'); ?>;
+
+  const defaultCenter = [37.2301, -8.0653];
+  const map = L.map('abastecimentoMap').setView(defaultCenter, 9);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap'
+  }).addTo(map);
+
+  let marker = null;
+  const latInput = document.getElementById('latitude');
+  const lngInput = document.getElementById('longitude');
+  const coordsText = document.getElementById('coordsText');
+
+  function updateCoordsText(lat, lng) {
+    if (lat === null || lng === null) {
+      coordsText.textContent = 'Nenhuma coordenada selecionada.';
+      return;
+    }
+    coordsText.textContent = 'Latitude: ' + Number(lat).toFixed(7) + ' | Longitude: ' + Number(lng).toFixed(7);
+  }
+
+  function ensureMarker(lat, lng) {
+    if (!marker) {
+      marker = L.marker([lat, lng], { draggable: true }).addTo(map);
+      marker.on('dragend', function () {
+        const p = marker.getLatLng();
+        latInput.value = p.lat.toFixed(7);
+        lngInput.value = p.lng.toFixed(7);
+        updateCoordsText(p.lat, p.lng);
+      });
+    } else {
+      marker.setLatLng([lat, lng]);
+    }
+  }
+
+  function setPoint(lat, lng, zoomLevel = 15) {
+    ensureMarker(lat, lng);
+    latInput.value = Number(lat).toFixed(7);
+    lngInput.value = Number(lng).toFixed(7);
+    updateCoordsText(lat, lng);
+    map.setView([lat, lng], zoomLevel);
+  }
+
+  function clearPoint() {
+    if (marker) {
+      map.removeLayer(marker);
+      marker = null;
+    }
+    latInput.value = '';
+    lngInput.value = '';
+    updateCoordsText(null, null);
+    map.setView(defaultCenter, 9);
+  }
+
+  map.on('click', function (e) {
+    setPoint(e.latlng.lat, e.latlng.lng);
+  });
+
+  document.getElementById('btnGeo').addEventListener('click', function () {
+    if (!navigator.geolocation) {
+      alert('Geolocalização não suportada neste navegador.');
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      function (pos) {
+        setPoint(pos.coords.latitude, pos.coords.longitude);
+      },
+      function () {
+        alert('Não foi possível obter a localização. Permite o acesso à geolocalização no navegador.');
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  });
+
+  document.getElementById('btnClearCoords').addEventListener('click', clearPoint);
+
+  if (initialLat !== null && initialLng !== null) {
+    setPoint(initialLat, initialLng, 13);
+  } else {
+    updateCoordsText(null, null);
+  }
+
+  setTimeout(function () {
+    map.invalidateSize();
+  }, 200);
+</script>
 
 <?php
 mysqli_close($ligacao);

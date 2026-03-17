@@ -44,7 +44,7 @@ function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
         </div>
         <div class="text-muted small mb-3">Criar/editar perfis e acessos.</div>
         <a class="btn btn-outline-primary" href="usuarios.php">Gerir</a>
-      </div>
+      </div>\
     </div>
   <?php endif; ?>
 
