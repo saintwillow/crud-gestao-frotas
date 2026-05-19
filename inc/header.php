@@ -57,24 +57,24 @@ if ($nomeUser) {
       </a>
 
       <a class="nav-link <?php echo ($active==='manutencao') ? 'active' : ''; ?>" href="<?php echo $BASE_URL; ?>/manutencao/index.php">
-        <span class="nav-ico"><i class="bi bi-gear-fill"></i></span>
+        <span class="nav-ico"><i class="bi bi-tools"></i></span>
         <span>Manutenção</span>
       </a>
 
-     <a class="nav-link <?php echo ($active==='abastecimentos') ? 'active' : ''; ?>" href="<?php echo $BASE_URL; ?>/abastecimentos/index.php">
+      <a class="nav-link <?php echo ($active==='abastecimentos') ? 'active' : ''; ?>" href="<?php echo $BASE_URL; ?>/abastecimentos/index.php">
         <span class="nav-ico"><i class="bi bi-fuel-pump-fill"></i></span>
         <span>Abastecimento</span>
-     </a>
+      </a>
 
-     <a class="nav-link <?php echo ($active==='mapa_abastecimentos') ? 'active' : ''; ?>" href="<?php echo $BASE_URL; ?>/abastecimentos/mapa.php">
+      <a class="nav-link <?php echo ($active==='mapa_abastecimentos') ? 'active' : ''; ?>" href="<?php echo $BASE_URL; ?>/abastecimentos/mapa.php">
         <span class="nav-ico"><i class="bi bi-geo-alt-fill"></i></span>
         <span>Mapa Abastecimento</span>
-     </a>
+      </a>
 
-     <a class="nav-link <?php echo ($active==='mapa_frota') ? 'active' : ''; ?>" href="<?php echo $BASE_URL; ?>/mapa-frota/index.php">
+      <a class="nav-link <?php echo ($active==='mapa_frota') ? 'active' : ''; ?>" href="<?php echo $BASE_URL; ?>/mapa-frota/index.php">
         <span class="nav-ico"><i class="bi bi-map-fill"></i></span>
         <span>Mapa da Frota</span>
-     </a>
+      </a>
 
       <a class="nav-link <?php echo ($active==='motoristas') ? 'active' : ''; ?>" href="<?php echo $BASE_URL; ?>/motoristas/index.php">
         <span class="nav-ico"><i class="bi bi-person-fill"></i></span>

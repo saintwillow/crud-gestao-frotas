@@ -1,4 +1,4 @@
-<?php
+<?php 
 require_once __DIR__ . "/inc/auth.php";
 exigir_login();
 
@@ -105,7 +105,7 @@ function badgeEstadoDashboard($estado) {
           <div class="kpi-sub">Manutenções pendentes</div>
           <div class="small text-success mt-1">-1 vs. mês anterior</div>
         </div>
-        <div class="kpi-ico"><i class="bi bi-gear-fill fs-5"></i></div>
+        <div class="kpi-ico"><i class="bi bi-tools fs-5"></i></div>
       </div>
     </div>
   </div>
@@ -212,7 +212,7 @@ function badgeEstadoDashboard($estado) {
         <?php if (count($upcoming) > 0): ?>
           <?php foreach ($upcoming as $m): ?>
             <div class="list-row no-link">
-              <div class="list-ico warn"><i class="bi bi-gear-fill"></i></div>
+              <div class="list-ico warn"><i class="bi bi-tools"></i></div>
               <div class="flex-grow-1 min-w-0">
                 <div class="fw-semibold text-truncate"><?php echo h($m['descricao'] ?? 'Manutenção'); ?></div>
                 <div class="small text-muted">
@@ -264,12 +264,18 @@ function badgeEstadoDashboard($estado) {
       plugins: {
         legend: { display: false },
         tooltip: {
-          callbacks: { label: (ctx) => '€ ' + Number(ctx.raw).toLocaleString('pt-PT') }
+          callbacks: {
+            label: (ctx) => '€ ' + Number(ctx.raw).toLocaleString('pt-PT')
+          }
         }
       },
       scales: {
         x: { grid: { display: false } },
-        y: { ticks: { callback: (v) => '€ ' + Number(v).toLocaleString('pt-PT') } }
+        y: {
+          ticks: {
+            callback: (v) => '€ ' + Number(v).toLocaleString('pt-PT')
+          }
+        }
       }
     }
   });
@@ -286,7 +292,11 @@ function badgeEstadoDashboard($estado) {
         cutout: '65%'
       }]
     },
-    options: { plugins: { legend: { display: false } } }
+    options: {
+      plugins: {
+        legend: { display: false }
+      }
+    }
   });
 </script>
 

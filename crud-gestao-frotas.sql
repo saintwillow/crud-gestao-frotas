@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Tempo de geração: 28/02/2026 às 12:52
+-- Tempo de geração: 19/05/2026 às 13:29
 -- Versão do servidor: 10.4.32-MariaDB
 -- Versão do PHP: 8.2.12
 
@@ -48,7 +48,11 @@ CREATE TABLE `abastecimentos` (
 --
 
 INSERT INTO `abastecimentos` (`id`, `viatura_id`, `colaborador_id`, `posto`, `combustivel`, `litros`, `preco_litro`, `total`, `data_abastecimento`, `observacoes`, `criado_em`, `latitude`, `longitude`) VALUES
-(7, 29, NULL, 'Posto - Forum Algarve', 'Gasolina', 20.00, 1.970, 39.40, '2026-02-19', NULL, '2026-02-19 13:59:13', NULL, NULL);
+(7, 29, NULL, 'Posto - Forum Algarve', 'Gasolina', 20.00, 1.970, 39.40, '2026-02-19', NULL, '2026-02-19 13:59:13', NULL, NULL),
+(8, 29, NULL, 'Faro', 'Gasolina', 40.00, 2.560, 102.40, '2026-03-17', NULL, '2026-03-17 10:57:43', 37.0161141, -7.9275537),
+(9, 28, NULL, 'Montenegro', 'Etanol', 50.00, 3.090, 154.50, '2026-03-17', NULL, '2026-03-17 11:00:17', 37.0244573, -7.9664134),
+(10, 20, NULL, 'Olhao', 'Diesel', 63.00, 2.870, 180.81, '2026-03-17', NULL, '2026-03-17 11:01:46', 37.0311044, -7.8421737),
+(11, 25, NULL, 'Armação de Pera', 'Gasolina', 40.00, 1.780, 71.20, '2026-03-17', NULL, '2026-03-17 12:29:39', 37.1052060, -8.3657010);
 
 -- --------------------------------------------------------
 
@@ -84,6 +88,46 @@ CREATE TABLE `colaboradores` (
 -- --------------------------------------------------------
 
 --
+-- Estrutura para tabela `infraestruturas`
+--
+
+CREATE TABLE `infraestruturas` (
+  `id` int(11) NOT NULL,
+  `nome` varchar(150) NOT NULL,
+  `tipo` enum('ETA','ETAR') NOT NULL,
+  `concelho` varchar(100) DEFAULT NULL,
+  `localidade` varchar(150) DEFAULT NULL,
+  `sub_regiao` varchar(100) NOT NULL,
+  `latitude` decimal(10,7) DEFAULT NULL,
+  `longitude` decimal(10,7) DEFAULT NULL,
+  `ativo` tinyint(1) NOT NULL DEFAULT 1,
+  `criado_em` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Despejando dados para a tabela `infraestruturas`
+--
+
+INSERT INTO `infraestruturas` (`id`, `nome`, `tipo`, `concelho`, `localidade`, `sub_regiao`, `latitude`, `longitude`, `ativo`, `criado_em`) VALUES
+(1, 'ETA de Alcantarilha', 'ETA', 'Silves', 'Alcantarilha', 'Albufeira / Silves', 37.1306000, -8.3465000, 1, '2026-03-15 17:43:58'),
+(2, 'ETA de Fontaínhas', 'ETA', 'Portimão', 'Mexilhoeira Grande', 'Lagos / Portimão', 37.1904000, -8.6248000, 1, '2026-03-15 17:43:58'),
+(3, 'ETA de Tavira', 'ETA', 'Tavira', 'Tavira', 'Tavira / Olhão / VRSA', 37.1250000, -7.6480000, 1, '2026-03-15 17:43:58'),
+(4, 'ETA de Beliche', 'ETA', 'Castro Marim', 'Beliche', 'Tavira / Olhão / VRSA', 37.2508000, -7.5037000, 1, '2026-03-15 17:43:58'),
+(5, 'ETAR de Lagos', 'ETAR', 'Lagos', 'São Sebastião', 'Lagos / Portimão', 37.1156000, -8.6745000, 1, '2026-03-15 17:43:58'),
+(6, 'ETAR da Companheira', 'ETAR', 'Portimão', 'Portimão', 'Lagos / Portimão', 37.1465000, -8.5482000, 1, '2026-03-15 17:43:58'),
+(7, 'ETAR de Albufeira Poente', 'ETAR', 'Albufeira', 'Guia', 'Albufeira / Silves', 37.1037000, -8.3013000, 1, '2026-03-15 17:43:58'),
+(8, 'ETAR de Vale de Faro', 'ETAR', 'Albufeira', 'Vale de Faro', 'Albufeira / Silves', 37.0892000, -8.2462000, 1, '2026-03-15 17:43:58'),
+(9, 'ETAR de Faro Noroeste', 'ETAR', 'Faro', 'Montenegro', 'Faro / Loulé / São Brás', 37.0340000, -7.9656000, 1, '2026-03-15 17:43:58'),
+(10, 'ETAR de Faro/Olhão', 'ETAR', 'Faro', 'Sítio da Garganta', 'Faro / Loulé / São Brás', 37.0480000, -7.8248000, 1, '2026-03-15 17:43:58'),
+(11, 'ETAR de Vilamoura', 'ETAR', 'Loulé', 'Quarteira', 'Faro / Loulé / São Brás', 37.0771000, -8.1009000, 1, '2026-03-15 17:43:58'),
+(12, 'ETAR Quinta do Lago', 'ETAR', 'Loulé', 'Quinta do Lago', 'Faro / Loulé / São Brás', 37.0399000, -8.0295000, 1, '2026-03-15 17:43:58'),
+(13, 'ETAR de Almargem', 'ETAR', 'Tavira', 'Cabanas de Tavira', 'Tavira / Olhão / VRSA', 37.1386000, -7.6016000, 1, '2026-03-15 17:43:58'),
+(14, 'ETAR de Olhão Nascente', 'ETAR', 'Olhão', 'Quelfes', 'Tavira / Olhão / VRSA', 37.0377000, -7.8392000, 1, '2026-03-15 17:43:58'),
+(15, 'ETAR de Vila Real de Santo António', 'ETAR', 'Vila Real de Santo António', 'Carrasqueira', 'Tavira / Olhão / VRSA', 37.1900000, -7.4173000, 1, '2026-03-15 17:43:58');
+
+-- --------------------------------------------------------
+
+--
 -- Estrutura para tabela `manutencoes`
 --
 
@@ -96,7 +140,7 @@ CREATE TABLE `manutencoes` (
   `data_fim` date DEFAULT NULL,
   `custo` decimal(10,2) DEFAULT NULL,
   `oficina` varchar(120) DEFAULT NULL,
-  `status` enum('Aberta','Concluída','Cancelada') NOT NULL DEFAULT 'Aberta',
+  `status` enum('Agendada','Pendente','Em andamento','Concluída','Cancelada') NOT NULL DEFAULT 'Agendada',
   `criado_em` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -105,11 +149,11 @@ CREATE TABLE `manutencoes` (
 --
 
 INSERT INTO `manutencoes` (`id`, `viatura_id`, `tipo`, `descricao`, `data_inicio`, `data_fim`, `custo`, `oficina`, `status`, `criado_em`) VALUES
-(7, 25, 'Corretiva', 'Reparo no sistema de freios', '2024-02-20', NULL, 2300.00, 'Oficina Central', '', '2026-02-12 05:49:34'),
-(8, 26, 'Preventiva', 'Revisão programada (100.000km)', '2024-03-05', NULL, 1450.00, 'Oficina Norte', '', '2026-02-12 05:49:34'),
-(9, 27, 'Corretiva', 'Troca de embraiagem', '2024-03-12', NULL, 970.00, 'Oficina Central', '', '2026-02-12 05:49:34'),
-(10, 28, 'Preventiva', 'Suspensão e alinhamento', '2024-03-18', NULL, 620.00, 'Oficina Sul', '', '2026-02-12 05:49:34'),
-(12, 29, 'Corretiva', 'Problemas no motor', '2026-02-19', NULL, 1000.00, NULL, '', '2026-02-19 13:42:39');
+(7, 25, 'Corretiva', 'Reparo no sistema de freios', '2024-02-20', NULL, 2300.00, 'Oficina Central', 'Pendente', '2026-02-12 05:49:34'),
+(8, 26, 'Preventiva', 'Revisão programada (100.000km)', '2024-03-05', NULL, 1450.00, 'Oficina Norte', 'Pendente', '2026-02-12 05:49:34'),
+(9, 27, 'Corretiva', 'Troca de embraiagem', '2024-03-12', NULL, 970.00, 'Oficina Central', 'Pendente', '2026-02-12 05:49:34'),
+(10, 28, 'Preventiva', 'Suspensão e alinhamento', '2024-03-18', NULL, 620.00, 'Oficina Sul', 'Pendente', '2026-02-12 05:49:34'),
+(12, 29, 'Corretiva', 'Problemas no motor', '2026-02-19', NULL, 1000.00, NULL, 'Pendente', '2026-02-19 13:42:39');
 
 -- --------------------------------------------------------
 
@@ -190,8 +234,9 @@ CREATE TABLE `viaturas` (
   `tipo` enum('Ligeiro','Pick-up','Carrinha','Camião','Elétrico','Outro') NOT NULL DEFAULT 'Ligeiro',
   `combustivel` enum('Diesel','Gasolina','Elétrico','Híbrido','Outro') NOT NULL DEFAULT 'Diesel',
   `quilometragem` int(10) UNSIGNED NOT NULL DEFAULT 0,
-  `estado` enum('Disponível','Atribuída','Em Manutenção') NOT NULL DEFAULT 'Disponível',
+  `estado` enum('Disponível','Atribuída','Em Manutenção','Inativo') NOT NULL DEFAULT 'Disponível',
   `observacoes` text DEFAULT NULL,
+  `infraestrutura_id` int(11) DEFAULT NULL,
   `criado_em` timestamp NOT NULL DEFAULT current_timestamp(),
   `atualizado_em` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -200,22 +245,21 @@ CREATE TABLE `viaturas` (
 -- Despejando dados para a tabela `viaturas`
 --
 
-INSERT INTO `viaturas` (`id`, `matricula`, `marca_modelo`, `tipo`, `combustivel`, `quilometragem`, `estado`, `observacoes`, `criado_em`, `atualizado_em`) VALUES
-(17, 'ABC-1234', 'Mercedes-Benz Sprinter 515', 'Carrinha', 'Diesel', 45230, 'Atribuída', 'Rota operacional - ETAR Zona Norte', '2026-02-12 05:48:09', '2026-02-12 05:48:09'),
-(18, 'DEF-5678', 'Toyota Hilux 2.8', 'Pick-up', 'Diesel', 23100, 'Atribuída', 'Rota: Reservatório Central → Bairro Leste', '2026-02-12 05:48:09', '2026-02-12 05:48:09'),
-(19, 'JKL-3456', 'Fiat Strada Freedom', 'Pick-up', 'Gasolina', 12050, 'Atribuída', 'Apoio urbano e campo', '2026-02-12 05:48:09', '2026-02-12 05:48:09'),
-(20, 'MNO-7890', 'Mercedes-Benz Accelo 815', 'Camião', 'Diesel', 110200, 'Atribuída', 'Transporte interno e apoio logístico', '2026-02-12 05:48:09', '2026-02-12 05:48:09'),
-(21, 'STU-4567', 'Volkswagen Delivery 11.180', 'Camião', 'Diesel', 97200, 'Atribuída', 'Distribuição e apoio técnico', '2026-02-12 05:48:09', '2026-02-12 05:48:09'),
-(22, 'KLM-5555', 'Renault Kangoo', 'Carrinha', 'Diesel', 68400, 'Atribuída', 'Serviços técnicos - zona oeste', '2026-02-12 05:48:09', '2026-02-12 05:48:09'),
-(23, 'NOP-6666', 'Peugeot Partner', 'Carrinha', 'Diesel', 54420, 'Atribuída', 'Equipa de manutenção de rede', '2026-02-12 05:48:09', '2026-02-12 05:48:09'),
-(24, 'RST-7777', 'Iveco Daily 35S', 'Carrinha', 'Diesel', 80310, 'Atribuída', 'Apoio operacional - zona sul', '2026-02-12 05:48:09', '2026-02-12 05:48:09'),
-(25, 'GHI-9012', 'Ford Cargo 1119', 'Camião', 'Diesel', 89500, 'Em Manutenção', 'Reparo no sistema de freios', '2026-02-12 05:48:09', '2026-02-12 05:48:09'),
-(26, 'QWE-2222', 'MAN TGL 8.180', 'Camião', 'Diesel', 121500, 'Em Manutenção', 'Revisão programada (100.000km)', '2026-02-12 05:48:09', '2026-02-12 05:48:09'),
-(27, 'ASD-3333', 'Citroën Berlingo', 'Carrinha', 'Diesel', 73800, 'Em Manutenção', 'Troca de embraiagem', '2026-02-12 05:48:09', '2026-02-12 05:48:09'),
-(28, 'HJK-4444', 'Isuzu D-Max 3.0', 'Pick-up', 'Diesel', 65800, 'Em Manutenção', 'Suspensão e alinhamento', '2026-02-12 05:48:09', '2026-02-12 05:48:09'),
-(29, 'TUV-1111', 'Dacia Duster', 'Ligeiro', 'Gasolina', 28900, 'Disponível', 'Disponível para atribuição', '2026-02-12 05:48:09', '2026-02-12 05:48:09'),
-(30, 'VWX-7788', 'Nissan Leaf', 'Ligeiro', 'Elétrico', 20500, 'Disponível', 'Viatura elétrica para deslocações curtas', '2026-02-12 05:48:09', '2026-02-12 05:48:09'),
-(32, 'ZZZ-0002', 'Opel Combo', 'Carrinha', 'Diesel', 143200, '', 'Viatura desativada / sucata', '2026-02-12 05:48:09', '2026-02-12 05:48:09');
+INSERT INTO `viaturas` (`id`, `matricula`, `marca_modelo`, `tipo`, `combustivel`, `quilometragem`, `estado`, `observacoes`, `infraestrutura_id`, `criado_em`, `atualizado_em`) VALUES
+(17, 'ABC-1234', 'Mercedes-Benz Sprinter 515', 'Carrinha', 'Diesel', 45230, 'Atribuída', 'Rota operacional - ETAR Zona Norte', 9, '2026-02-12 05:48:09', '2026-03-15 17:44:38'),
+(18, 'DEF-5678', 'Toyota Hilux 2.8', 'Pick-up', 'Diesel', 23100, 'Atribuída', 'Rota: Reservatório Central → Bairro Leste', 11, '2026-02-12 05:48:09', '2026-03-15 17:44:38'),
+(19, 'JKL-3456', 'Fiat Strada Freedom', 'Pick-up', 'Gasolina', 12050, 'Atribuída', 'Apoio urbano e campo', 9, '2026-02-12 05:48:09', '2026-03-15 17:44:38'),
+(20, 'MNO-7890', 'Mercedes-Benz Accelo 815', 'Camião', 'Diesel', 110200, 'Atribuída', 'Transporte interno e apoio logístico', 13, '2026-02-12 05:48:09', '2026-03-15 17:44:38'),
+(21, 'STU-4567', 'Volkswagen Delivery 11.180', 'Camião', 'Diesel', 97200, 'Atribuída', 'Distribuição e apoio técnico', 7, '2026-02-12 05:48:09', '2026-03-15 17:44:38'),
+(22, 'KLM-5555', 'Renault Kangoo', 'Carrinha', 'Diesel', 68400, 'Atribuída', 'Serviços técnicos - zona oeste', 1, '2026-02-12 05:48:09', '2026-03-15 17:44:38'),
+(23, 'NOP-6666', 'Peugeot Partner', 'Carrinha', 'Diesel', 54420, 'Atribuída', 'Equipa de manutenção de rede', 5, '2026-02-12 05:48:09', '2026-03-15 17:44:38'),
+(24, 'RST-7777', 'Iveco Daily 35S', 'Carrinha', 'Diesel', 80310, 'Atribuída', 'Apoio operacional - zona sul', 6, '2026-02-12 05:48:09', '2026-03-15 17:44:38'),
+(25, 'GHI-9012', 'Ford Cargo 1119', 'Camião', 'Diesel', 89500, 'Em Manutenção', 'Reparo no sistema de freios', 10, '2026-02-12 05:48:09', '2026-03-15 17:44:38'),
+(26, 'QWE-2222', 'MAN TGL 8.180', 'Camião', 'Diesel', 121500, 'Em Manutenção', 'Revisão programada (100.000km)', 13, '2026-02-12 05:48:09', '2026-03-15 17:44:38'),
+(27, 'ASD-3333', 'Citroën Berlingo', 'Carrinha', 'Diesel', 73800, 'Em Manutenção', 'Troca de embraiagem', 5, '2026-02-12 05:48:09', '2026-03-15 17:44:38'),
+(28, 'HJK-4444', 'Isuzu D-Max 3.0', 'Pick-up', 'Diesel', 65800, 'Em Manutenção', 'Suspensão e alinhamento', 7, '2026-02-12 05:48:09', '2026-03-15 17:44:38'),
+(29, 'TUV-1111', 'Dacia Duster', 'Ligeiro', 'Gasolina', 28900, 'Disponível', 'Disponível para atribuição', NULL, '2026-02-12 05:48:09', '2026-02-12 05:48:09'),
+(30, 'VWX-7788', 'Nissan Leaf', 'Ligeiro', 'Elétrico', 20500, 'Disponível', 'Viatura elétrica para deslocações curtas', NULL, '2026-02-12 05:48:09', '2026-02-12 05:48:09');
 
 -- --------------------------------------------------------
 
@@ -268,6 +312,12 @@ ALTER TABLE `colaboradores`
   ADD UNIQUE KEY `email` (`email`);
 
 --
+-- Índices de tabela `infraestruturas`
+--
+ALTER TABLE `infraestruturas`
+  ADD PRIMARY KEY (`id`);
+
+--
 -- Índices de tabela `manutencoes`
 --
 ALTER TABLE `manutencoes`
@@ -298,7 +348,8 @@ ALTER TABLE `viaturas`
   ADD UNIQUE KEY `matricula` (`matricula`),
   ADD KEY `idx_viaturas_estado` (`estado`),
   ADD KEY `idx_viaturas_tipo` (`tipo`),
-  ADD KEY `idx_viaturas_combustivel` (`combustivel`);
+  ADD KEY `idx_viaturas_combustivel` (`combustivel`),
+  ADD KEY `idx_viaturas_infraestrutura` (`infraestrutura_id`);
 
 --
 -- AUTO_INCREMENT para tabelas despejadas
@@ -308,7 +359,7 @@ ALTER TABLE `viaturas`
 -- AUTO_INCREMENT de tabela `abastecimentos`
 --
 ALTER TABLE `abastecimentos`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=12;
 
 --
 -- AUTO_INCREMENT de tabela `atribuicoes`
@@ -321,6 +372,12 @@ ALTER TABLE `atribuicoes`
 --
 ALTER TABLE `colaboradores`
   MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT de tabela `infraestruturas`
+--
+ALTER TABLE `infraestruturas`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=16;
 
 --
 -- AUTO_INCREMENT de tabela `manutencoes`
@@ -375,6 +432,12 @@ ALTER TABLE `manutencoes`
 --
 ALTER TABLE `motoristas`
   ADD CONSTRAINT `fk_motoristas_viatura` FOREIGN KEY (`viatura_id`) REFERENCES `viaturas` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+--
+-- Restrições para tabelas `viaturas`
+--
+ALTER TABLE `viaturas`
+  ADD CONSTRAINT `fk_viaturas_infraestrutura` FOREIGN KEY (`infraestrutura_id`) REFERENCES `infraestruturas` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
