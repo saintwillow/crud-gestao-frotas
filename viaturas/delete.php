@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . "/../inc/auth.php";
-exigir_login();
+exigir_gestor_ou_admin();
 
 $active = 'viaturas';
 require_once __DIR__ . "/../inc/database.php";
@@ -11,8 +11,12 @@ function h($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 if ($id <= 0) { header("Location: index.php"); exit; }
 
-$res = mysqli_query($ligacao, "SELECT id, matricula, marca_modelo FROM viaturas WHERE id=$id LIMIT 1");
-$veiculo = ($res && mysqli_num_rows($res) > 0) ? mysqli_fetch_assoc($res) : null;
+$stmt = mysqli_prepare($ligacao, "SELECT id, matricula, marca_modelo FROM viaturas WHERE id=? LIMIT 1");
+mysqli_stmt_bind_param($stmt, "i", $id);
+mysqli_stmt_execute($stmt);
+$res = mysqli_stmt_get_result($stmt);
+$veiculo = $res ? mysqli_fetch_assoc($res) : null;
+mysqli_stmt_close($stmt);
 
 if (!$veiculo) {
   echo '<div class="page-max-4xl"><div class="glass-card p-4">Veículo não encontrado.</div></div>';
@@ -21,21 +25,20 @@ if (!$veiculo) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-  $confirm = $_POST['confirm'] ?? 'no';
-
-  if ($confirm === 'yes') {
-    mysqli_query($ligacao, "DELETE FROM viaturas WHERE id=$id");
+  if (($_POST['confirm'] ?? '') === 'yes') {
+    $del = mysqli_prepare($ligacao, "DELETE FROM viaturas WHERE id=?");
+    mysqli_stmt_bind_param($del, "i", $id);
+    mysqli_stmt_execute($del);
+    mysqli_stmt_close($del);
     header("Location: index.php?msg=apagada");
     exit;
   }
-
   header("Location: show.php?id=$id");
   exit;
 }
 ?>
 
 <div class="page-max-4xl space-y-6">
-
   <a class="back-link" href="show.php?id=<?php echo (int)$id; ?>">← Voltar ao detalhe</a>
 
   <div>
@@ -48,13 +51,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       Tem a certeza que deseja apagar <strong><?php echo h($veiculo['marca_modelo']); ?></strong>
       (<strong><?php echo h($veiculo['matricula']); ?></strong>)?
     </div>
-
     <form method="post" class="d-flex justify-content-end gap-2">
       <button class="btn btn-outline-secondary" type="submit" name="confirm" value="no">Cancelar</button>
       <button class="btn btn-danger" type="submit" name="confirm" value="yes">Sim, apagar</button>
     </form>
   </div>
-
 </div>
 
 <?php

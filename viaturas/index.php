@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . "/../inc/auth.php";
-exigir_login();
+exigir_gestor_ou_admin();
 
 $active = 'viaturas';
 require_once __DIR__ . "/../inc/database.php";
@@ -368,7 +368,9 @@ $res = mysqli_query($ligacao, $sql);
 
     <div class="d-flex flex-wrap gap-2">
       <a class="btn btn-outline-secondary" href="<?php echo $BASE_URL; ?>/mapa-frota/index.php">Mapa da Frota</a>
-      <a class="btn btn-primary" href="create.php">Novo Veículo</a>
+      <?php if (in_array(perfil_atual(), ['admin', 'gestor'], true)): ?>
+        <a class="btn btn-primary" href="create.php">Novo Veículo</a>
+      <?php endif; ?>
     </div>
   </div>
 
@@ -570,7 +572,9 @@ $res = mysqli_query($ligacao, $sql);
 
             <div class="vehicle-actions">
               <a class="btn btn-primary btn-sm" href="show.php?id=<?php echo (int)$v['id']; ?>">Ver detalhe</a>
-              <a class="btn btn-outline-secondary btn-sm" href="edit.php?id=<?php echo (int)$v['id']; ?>">Editar</a>
+              <?php if (in_array(perfil_atual(), ['admin', 'gestor'], true)): ?>
+                <a class="btn btn-outline-secondary btn-sm" href="edit.php?id=<?php echo (int)$v['id']; ?>">Editar</a>
+              <?php endif; ?>
             </div>
           </div>
         </div>

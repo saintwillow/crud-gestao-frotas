@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . "/../inc/auth.php";
-exigir_login();
+exigir_gestor_ou_admin();
 
 $active = 'manutencao';
 require_once __DIR__ . "/../inc/database.php";
@@ -41,27 +41,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   if ($custo !== '' && !is_numeric($custo)) $erros[] = "O custo deve ser numérico (ou vazio).";
 
   if (!$erros) {
-    $vid = (int)$viatura_id;
+    $vid        = (int)$viatura_id;
+    $fim_val    = $data_fim !== '' ? $data_fim : null;
+    $oficina_val= $oficina !== '' ? $oficina : null;
+    $custo_val  = $custo !== '' ? (float)$custo : null;
 
-    $desc_s = mysqli_real_escape_string($ligacao, $descricao);
-    $tipo_s = mysqli_real_escape_string($ligacao, $tipo);
-    $ini_s = mysqli_real_escape_string($ligacao, $data_inicio);
-    $fim_s = ($data_fim === '') ? "NULL" : ("'".mysqli_real_escape_string($ligacao, $data_fim)."'");
-    $status_s = mysqli_real_escape_string($ligacao, $status);
-    $oficina_s = ($oficina === '') ? "NULL" : ("'".mysqli_real_escape_string($ligacao, $oficina)."'");
-    $custo_sql = ($custo === '') ? "NULL" : (float)$custo;
+    $stmt = mysqli_prepare($ligacao,
+      "INSERT INTO manutencoes (viatura_id, tipo, descricao, data_inicio, data_fim, custo, oficina, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+    );
+    mysqli_stmt_bind_param($stmt, "issssdss",
+      $vid, $tipo, $descricao, $data_inicio, $fim_val, $custo_val, $oficina_val, $status
+    );
 
-    $sql = "INSERT INTO manutencoes (viatura_id, tipo, descricao, data_inicio, data_fim, custo, oficina, status)
-            VALUES ($vid, '$tipo_s', '$desc_s', '$ini_s', $fim_s, $custo_sql, $oficina_s, '$status_s')";
-
-    if (mysqli_query($ligacao, $sql)) {
+    if (mysqli_stmt_execute($stmt)) {
       header("Location: index.php?msg=criada");
       exit;
     } else {
       $erros[] = "Erro ao criar manutenção: " . mysqli_error($ligacao);
     }
-  }
-}
+    mysqli_stmt_close($stmt);
+  }}
 ?>
 
 <div class="page-max-4xl space-y-6">

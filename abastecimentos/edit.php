@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . "/../inc/auth.php";
-exigir_login();
+exigir_gestor_ou_admin();
 
 $active = 'abastecimentos';
 require_once __DIR__ . "/../inc/database.php";
@@ -73,41 +73,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
 
   if (!$erros) {
-    $vid = (int)$viatura_id;
-    $cid = ($colaborador_id === '') ? "NULL" : (string)((int)$colaborador_id);
+    $vid        = (int)$viatura_id;
+    $cid_val    = ($colaborador_id !== '' && (int)$colaborador_id > 0) ? (int)$colaborador_id : null;
+    $lit        = (float)$litros;
+    $pl         = (float)$preco_litro;
+    $total      = round($lit * $pl, 2);
+    $obs_val    = $observacoes !== '' ? $observacoes : null;
+    $lat_val    = $latitude !== '' ? (float)$latitude : null;
+    $lng_val    = $longitude !== '' ? (float)$longitude : null;
 
-    $posto_s = mysqli_real_escape_string($ligacao, $posto);
-    $comb_s = mysqli_real_escape_string($ligacao, $combustivel);
+    $stmt = mysqli_prepare($ligacao,
+      "UPDATE abastecimentos SET viatura_id=?, colaborador_id=?, posto=?, combustivel=?,
+       litros=?, preco_litro=?, total=?, data_abastecimento=?, observacoes=?, latitude=?, longitude=?
+       WHERE id=?"
+    );
+    mysqli_stmt_bind_param($stmt, "iissdddssdddi",
+      $vid, $cid_val, $posto, $combustivel, $lit, $pl, $total,
+      $data_abastecimento, $obs_val, $lat_val, $lng_val, $id
+    );
 
-    $lit = (float)$litros;
-    $pl = (float)$preco_litro;
-    $total = $lit * $pl;
-
-    $data_s = mysqli_real_escape_string($ligacao, $data_abastecimento);
-    $obs_sql = ($observacoes === '') ? "NULL" : ("'" . mysqli_real_escape_string($ligacao, $observacoes) . "'");
-    $lat_sql = ($latitude === '') ? "NULL" : number_format((float)$latitude, 7, '.', '');
-    $lng_sql = ($longitude === '') ? "NULL" : number_format((float)$longitude, 7, '.', '');
-
-    $sql = "UPDATE abastecimentos SET
-              viatura_id=$vid,
-              colaborador_id=$cid,
-              posto='$posto_s',
-              combustivel='$comb_s',
-              litros=$lit,
-              preco_litro=$pl,
-              total=$total,
-              data_abastecimento='$data_s',
-              observacoes=$obs_sql,
-              latitude=$lat_sql,
-              longitude=$lng_sql
-            WHERE id=$id";
-
-    if (mysqli_query($ligacao, $sql)) {
+    if (mysqli_stmt_execute($stmt)) {
       header("Location: index.php?msg=editado");
       exit;
     } else {
       $erros[] = "Erro ao atualizar: " . mysqli_error($ligacao);
     }
+    mysqli_stmt_close($stmt);
   }
 }
 ?>

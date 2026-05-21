@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Tempo de geração: 19/05/2026 às 13:29
+-- Tempo de geração: 21/05/2026 às 15:17
 -- Versão do servidor: 10.4.32-MariaDB
 -- Versão do PHP: 8.2.12
 
@@ -193,7 +193,7 @@ INSERT INTO `motoristas` (`id`, `nome`, `cc`, `nif`, `carta_numero`, `carta_cate
 (16, 'Sofia Pereira', '90123456 7 ZZ9', '901234567', 'PT-CC-009', 'B', '2026-04-19', '(+351) 911 222 444', 'sofia.pereira@aquafleet.com', 'Ativo', '2021-01-14', 402, 24, '2026-02-12 05:48:53'),
 (17, 'Pedro Almeida', '34567890 1 ZZ3', '345678901', 'PT-CC-003', 'C+E', '2025-05-10', '(+351) 914 555 444', 'pedro.almeida@aquafleet.com', 'Ativo', '2019-01-20', 1102, 25, '2026-02-12 05:48:53'),
 (18, 'Tiago Ramos', '11223344 8 ZZ10', '112233445', 'PT-CC-010', 'C', '2026-03-21', '(+351) 913 444 555', 'tiago.ramos@aquafleet.com', 'Ativo', '2020-10-02', 689, 26, '2026-02-12 05:48:53'),
-(19, 'Inês Carvalho', '22334455 9 ZZ11', '223344556', 'PT-CC-011', 'B', '2027-01-07', '(+351) 914 111 222', 'ines.carvalho@aquafleet.com', 'Ativo', '2022-05-30', 256, 27, '2026-02-12 05:48:53'),
+(19, 'Inês Carvalho', '22334455 9 ZZ11', '223344556', 'PT-CC-011', 'B', '2027-01-07', '(+351) 914 111 222', 'ines.carvalho@aquafleet.com', 'Ativo', '2022-05-30', 256, 22, '2026-02-12 05:48:53'),
 (20, 'Miguel Duarte', '33445566 0 ZZ12', '334455667', 'PT-CC-012', 'B', '2026-06-11', '(+351) 915 333 999', 'miguel.duarte@aquafleet.com', 'Ativo', '2021-09-18', 471, 28, '2026-02-12 05:48:53');
 
 -- --------------------------------------------------------
@@ -209,17 +209,18 @@ CREATE TABLE `usuarios` (
   `senha` varchar(60) NOT NULL,
   `perfil` varchar(40) NOT NULL DEFAULT 'Gestor',
   `ativo` tinyint(1) NOT NULL DEFAULT 1,
-  `criado_em` timestamp NOT NULL DEFAULT current_timestamp()
+  `criado_em` timestamp NOT NULL DEFAULT current_timestamp(),
+  `motorista_id` int(10) UNSIGNED DEFAULT NULL COMMENT 'Ligação ao motorista (para perfil operário)'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Despejando dados para a tabela `usuarios`
 --
 
-INSERT INTO `usuarios` (`id`, `nome`, `username`, `senha`, `perfil`, `ativo`, `criado_em`) VALUES
-(1, 'Giovanni Santos', 'admin', '1234', 'admin', 1, '2026-01-16 23:20:52'),
-(2, 'Alberto Cunha', 'gestor', '1234', 'gestor', 1, '2026-02-19 13:35:36'),
-(3, 'Inês Castro', 'utilizador', '1234', 'operario', 1, '2026-02-19 13:36:13');
+INSERT INTO `usuarios` (`id`, `nome`, `username`, `senha`, `perfil`, `ativo`, `criado_em`, `motorista_id`) VALUES
+(1, 'Giovanni Santos', 'admin', '$2y$10$I/1aYDnp3bWTXU1C75IzJu1gSOBS0nwoXOXfXGk6/2Ng1ICio6/cq', 'admin', 1, '2026-01-16 23:20:52', NULL),
+(2, 'Alberto Cunha', 'gestor', '$2y$10$oAfkMPLBXZZ7E8RTk67VnuZpvl8e76XjQYy9yRHMBL86whffQF4e2', 'gestor', 1, '2026-02-19 13:35:36', NULL),
+(3, 'Inês Castro', 'utilizador', '$2y$10$LxUpHyEL.nYq2RXmDm1PW.8wm8KO4ZjczuT0.fM3K482o/BCJ5mMe', 'operario', 1, '2026-02-19 13:36:13', NULL);
 
 -- --------------------------------------------------------
 
@@ -259,7 +260,7 @@ INSERT INTO `viaturas` (`id`, `matricula`, `marca_modelo`, `tipo`, `combustivel`
 (27, 'ASD-3333', 'Citroën Berlingo', 'Carrinha', 'Diesel', 73800, 'Em Manutenção', 'Troca de embraiagem', 5, '2026-02-12 05:48:09', '2026-03-15 17:44:38'),
 (28, 'HJK-4444', 'Isuzu D-Max 3.0', 'Pick-up', 'Diesel', 65800, 'Em Manutenção', 'Suspensão e alinhamento', 7, '2026-02-12 05:48:09', '2026-03-15 17:44:38'),
 (29, 'TUV-1111', 'Dacia Duster', 'Ligeiro', 'Gasolina', 28900, 'Disponível', 'Disponível para atribuição', NULL, '2026-02-12 05:48:09', '2026-02-12 05:48:09'),
-(30, 'VWX-7788', 'Nissan Leaf', 'Ligeiro', 'Elétrico', 20500, 'Disponível', 'Viatura elétrica para deslocações curtas', NULL, '2026-02-12 05:48:09', '2026-02-12 05:48:09');
+(30, 'VWX-7788', 'Nissan Leaf', 'Ligeiro', 'Elétrico', 20500, 'Disponível', '0', 3, '2026-02-12 05:48:09', '2026-05-21 13:14:21');
 
 -- --------------------------------------------------------
 

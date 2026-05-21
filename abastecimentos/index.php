@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . "/../inc/auth.php";
-exigir_login();
+exigir_gestor_ou_admin();
 
 $active = 'abastecimento';
 require_once __DIR__ . "/../inc/database.php";
@@ -126,7 +126,9 @@ if ($res) while ($r = mysqli_fetch_assoc($res)) $rows[] = $r;
 
       <div class="d-flex gap-2">
         <a class="btn btn-outline-secondary" href="index.php">Limpar</a>
-        <a class="btn btn-primary" href="create.php">Novo Abastecimento</a>
+        <?php if (in_array(perfil_atual(), ['admin', 'gestor'], true)): ?>
+          <a class="btn btn-primary" href="create.php">Novo Abastecimento</a>
+        <?php endif; ?>
       </div>
     </div>
   </div>
@@ -166,8 +168,10 @@ if ($res) while ($r = mysqli_fetch_assoc($res)) $rows[] = $r;
               <div class="small text-muted"><?php echo h($data); ?></div>
 
               <div class="d-flex gap-2 justify-content-end mt-2">
-                <a class="btn btn-sm btn-outline-primary" href="edit.php?id=<?php echo $id; ?>">Editar</a>
-                <a class="btn btn-sm btn-outline-danger" href="delete.php?id=<?php echo $id; ?>">Apagar</a>
+                <?php if (in_array(perfil_atual(), ['admin', 'gestor'], true)): ?>
+                  <a class="btn btn-sm btn-outline-primary" href="edit.php?id=<?php echo $id; ?>">Editar</a>
+                  <a class="btn btn-sm btn-outline-danger" href="delete.php?id=<?php echo $id; ?>">Apagar</a>
+                <?php endif; ?>
               </div>
             </div>
           </div>

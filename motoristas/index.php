@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . "/../inc/auth.php";
-exigir_login();
+exigir_gestor_ou_admin();
 
 $active = 'motoristas';
 require_once __DIR__ . "/../inc/database.php";
@@ -64,7 +64,9 @@ function fmtDate($d){
     </div>
 
     <div class="d-flex gap-2">
-      <a href="create.php" class="btn btn-primary">Novo Motorista</a>
+      <?php if (in_array(perfil_atual(), ['admin', 'gestor'], true)): ?>
+        <a href="create.php" class="btn btn-primary">Novo Motorista</a>
+      <?php endif; ?>
     </div>
   </div>
 
@@ -144,8 +146,10 @@ function fmtDate($d){
             </div>
 
             <div class="d-flex gap-2 mt-3">
-              <a class="btn btn-sm btn-outline-primary" href="edit.php?id=<?php echo $id; ?>">Editar</a>
-              <a class="btn btn-sm btn-outline-danger" href="delete.php?id=<?php echo $id; ?>">Apagar</a>
+              <?php if (in_array(perfil_atual(), ['admin', 'gestor'], true)): ?>
+                <a class="btn btn-sm btn-outline-primary" href="edit.php?id=<?php echo $id; ?>">Editar</a>
+                <a class="btn btn-sm btn-outline-danger" href="delete.php?id=<?php echo $id; ?>">Apagar</a>
+              <?php endif; ?>
             </div>
           </div>
         </div>

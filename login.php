@@ -6,7 +6,8 @@ $erro = '';
 $base = base_url();
 
 if (esta_logado()) {
-  header("Location: " . $base . "/index.php");
+  $dest = perfil_atual() === 'operario' ? "/operario/index.php" : "/index.php";
+  header("Location: " . $base . $dest);
   exit;
 }
 
@@ -16,7 +17,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
   if (login($ligacao, $username, $senha)) {
     mysqli_close($ligacao);
-    header("Location: " . $base . "/index.php");
+    $dest = perfil_atual() === 'operario' ? "/operario/index.php" : "/index.php";
+    header("Location: " . $base . $dest);
     exit;
   } else {
     $erro = "Utilizador ou senha inválidos.";

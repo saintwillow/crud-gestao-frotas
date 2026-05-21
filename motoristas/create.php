@@ -1,30 +1,187 @@
-CREATE TABLE IF NOT EXISTS motoristas (
-  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+<?php
+require_once __DIR__ . "/../inc/auth.php";
+exigir_gestor_ou_admin();
 
-  nome VARCHAR(120) NOT NULL,
-  cc VARCHAR(20) NULL,
-  nif VARCHAR(20) NULL,
+$active = 'motoristas';
+require_once __DIR__ . "/../inc/database.php";
+require_once __DIR__ . "/../inc/header.php";
 
-  carta_numero VARCHAR(30) NULL,
-  carta_categoria VARCHAR(10) NULL,
-  carta_validade DATE NULL,
+function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 
-  telefone VARCHAR(30) NULL,
-  email VARCHAR(120) NULL,
+$erros = [];
+$nome = $cc = $nif = $carta_numero = $carta_categoria = $carta_validade = '';
+$telefone = $email = $desde = '';
+$status = 'Ativo';
+$viagens = 0;
+$viatura_id = '';
 
-  status ENUM('Ativo','Inativo') NOT NULL DEFAULT 'Ativo',
-  desde DATE NULL,
-  viagens INT NOT NULL DEFAULT 0,
+// lista viaturas p/ select
+$viaturas = [];
+$rV = mysqli_query($ligacao, "SELECT id, matricula, marca_modelo FROM viaturas ORDER BY matricula ASC");
+if ($rV) while ($row = mysqli_fetch_assoc($rV)) $viaturas[] = $row;
 
-  viatura_id INT UNSIGNED NULL,
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+  $nome           = trim($_POST['nome'] ?? '');
+  $cc             = trim($_POST['cc'] ?? '');
+  $nif            = trim($_POST['nif'] ?? '');
+  $carta_numero   = trim($_POST['carta_numero'] ?? '');
+  $carta_categoria= trim($_POST['carta_categoria'] ?? '');
+  $carta_validade = $_POST['carta_validade'] ?? '';
+  $telefone       = trim($_POST['telefone'] ?? '');
+  $email          = trim($_POST['email'] ?? '');
+  $status         = ($_POST['status'] ?? 'Ativo') === 'Inativo' ? 'Inativo' : 'Ativo';
+  $desde          = $_POST['desde'] ?? '';
+  $viagens        = max(0, (int)($_POST['viagens'] ?? 0));
+  $viatura_id     = $_POST['viatura_id'] ?? '';
 
-  criado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  if ($nome === '') $erros[] = "O nome é obrigatório.";
+  if ($nif !== '' && !preg_match('/^\d{9}$/', preg_replace('/\D/', '', $nif)))
+    $erros[] = "NIF inválido (deve ter 9 dígitos).";
+  if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL))
+    $erros[] = "E-mail inválido.";
 
-  INDEX (viatura_id),
-  UNIQUE KEY uq_motoristas_nif (nif),
+  $carta_validade_db = ($carta_validade !== '') ? $carta_validade : null;
+  $desde_db          = ($desde !== '') ? $desde : null;
+  $viatura_id_int    = ($viatura_id !== '' && (int)$viatura_id > 0) ? (int)$viatura_id : null;
 
-  CONSTRAINT fk_motoristas_viatura
-    FOREIGN KEY (viatura_id) REFERENCES viaturas(id)
-    ON DELETE SET NULL
-    ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  if (count($erros) === 0) {
+    if ($viatura_id_int === null) {
+      $stmt = mysqli_prepare($ligacao,
+        "INSERT INTO motoristas (nome, cc, nif, carta_numero, carta_categoria, carta_validade,
+           telefone, email, status, desde, viagens, viatura_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)"
+      );
+      mysqli_stmt_bind_param($stmt, "sssssssssi",
+        $nome, $cc, $nif, $carta_numero, $carta_categoria, $carta_validade_db,
+        $telefone, $email, $status, $desde_db, $viagens
+      );
+    } else {
+      $stmt = mysqli_prepare($ligacao,
+        "INSERT INTO motoristas (nome, cc, nif, carta_numero, carta_categoria, carta_validade,
+           telefone, email, status, desde, viagens, viatura_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      );
+      mysqli_stmt_bind_param($stmt, "sssssssssii",
+        $nome, $cc, $nif, $carta_numero, $carta_categoria, $carta_validade_db,
+        $telefone, $email, $status, $desde_db, $viagens, $viatura_id_int
+      );
+    }
+
+    if (mysqli_stmt_execute($stmt)) {
+      header("Location: index.php?msg=criado");
+      exit;
+    } else {
+      $erros[] = "Erro ao criar motorista: " . mysqli_error($ligacao);
+    }
+    mysqli_stmt_close($stmt);
+  }
+}
+?>
+
+<div class="page-max-6xl space-y-6">
+
+  <a class="back-link" href="index.php">← Voltar aos motoristas</a>
+
+  <div>
+    <h1 class="page-title">Novo Motorista</h1>
+    <div class="page-subtitle">Cadastrar um novo motorista na frota</div>
+  </div>
+
+  <?php if (count($erros) > 0): ?>
+    <div class="alert alert-danger">
+      <strong>Corrija os erros:</strong>
+      <ul class="mb-0">
+        <?php foreach ($erros as $e): ?>
+          <li><?php echo h($e); ?></li>
+        <?php endforeach; ?>
+      </ul>
+    </div>
+  <?php endif; ?>
+
+  <div class="glass-card p-4">
+    <form method="post" class="row g-3">
+
+      <div class="col-12 col-md-6">
+        <label class="form-label form-label-soft">Nome *</label>
+        <input class="form-control" name="nome" value="<?php echo h($nome); ?>" required>
+      </div>
+
+      <div class="col-12 col-md-3">
+        <label class="form-label form-label-soft">NIF</label>
+        <input class="form-control" name="nif" value="<?php echo h($nif); ?>" placeholder="9 dígitos">
+      </div>
+
+      <div class="col-12 col-md-3">
+        <label class="form-label form-label-soft">Cartão de Cidadão (CC)</label>
+        <input class="form-control" name="cc" value="<?php echo h($cc); ?>">
+      </div>
+
+      <div class="col-12 col-md-4">
+        <label class="form-label form-label-soft">Carta (nº)</label>
+        <input class="form-control" name="carta_numero" value="<?php echo h($carta_numero); ?>">
+      </div>
+
+      <div class="col-12 col-md-4">
+        <label class="form-label form-label-soft">Categoria</label>
+        <input class="form-control" name="carta_categoria" value="<?php echo h($carta_categoria); ?>" placeholder="ex.: B, C, C+E">
+      </div>
+
+      <div class="col-12 col-md-4">
+        <label class="form-label form-label-soft">Validade da carta</label>
+        <input class="form-control" type="date" name="carta_validade" value="<?php echo h($carta_validade); ?>">
+      </div>
+
+      <div class="col-12 col-md-4">
+        <label class="form-label form-label-soft">Telefone</label>
+        <input class="form-control" name="telefone" value="<?php echo h($telefone); ?>">
+      </div>
+
+      <div class="col-12 col-md-4">
+        <label class="form-label form-label-soft">E-mail</label>
+        <input class="form-control" name="email" value="<?php echo h($email); ?>">
+      </div>
+
+      <div class="col-12 col-md-2">
+        <label class="form-label form-label-soft">Viagens</label>
+        <input class="form-control" type="number" min="0" name="viagens" value="<?php echo (int)$viagens; ?>">
+      </div>
+
+      <div class="col-12 col-md-2">
+        <label class="form-label form-label-soft">Status</label>
+        <select class="form-select" name="status">
+          <option value="Ativo" <?php echo ($status==='Ativo')?'selected':''; ?>>Ativo</option>
+          <option value="Inativo" <?php echo ($status==='Inativo')?'selected':''; ?>>Inativo</option>
+        </select>
+      </div>
+
+      <div class="col-12 col-md-6">
+        <label class="form-label form-label-soft">Viatura atribuída</label>
+        <select class="form-select" name="viatura_id">
+          <option value="">Sem viatura</option>
+          <?php foreach ($viaturas as $v): ?>
+            <option value="<?php echo (int)$v['id']; ?>" <?php echo ((string)$viatura_id === (string)$v['id'])?'selected':''; ?>>
+              <?php echo h($v['matricula'] . " — " . $v['marca_modelo']); ?>
+            </option>
+          <?php endforeach; ?>
+        </select>
+      </div>
+
+      <div class="col-12 col-md-6">
+        <label class="form-label form-label-soft">Desde</label>
+        <input class="form-control" type="date" name="desde" value="<?php echo h($desde); ?>">
+      </div>
+
+      <div class="col-12 d-flex gap-2">
+        <button class="btn btn-primary">Salvar</button>
+        <a class="btn btn-outline-secondary" href="index.php">Cancelar</a>
+      </div>
+
+    </form>
+  </div>
+
+</div>
+
+<?php
+mysqli_close($ligacao);
+require_once __DIR__ . "/../inc/footer.php";
+?>

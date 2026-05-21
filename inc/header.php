@@ -45,7 +45,35 @@ if ($nomeUser) {
       </div>
     </div>
 
+    <?php $perfil_nav = perfil_atual(); ?>
     <nav class="nav flex-column nav-side">
+
+    <?php if ($perfil_nav === 'operario'): ?>
+
+      <!-- MENU DO OPERÁRIO -->
+      <a class="nav-link <?php echo ($active==='operario_painel') ? 'active' : ''; ?>" href="<?php echo $BASE_URL; ?>/operario/index.php">
+        <span class="nav-ico"><i class="bi bi-person-circle"></i></span>
+        <span>O meu painel</span>
+      </a>
+
+      <a class="nav-link <?php echo ($active==='operario_abastecimentos') ? 'active' : ''; ?>" href="<?php echo $BASE_URL; ?>/operario/abastecimentos.php">
+        <span class="nav-ico"><i class="bi bi-fuel-pump-fill"></i></span>
+        <span>Os meus abastecimentos</span>
+      </a>
+
+      <a class="nav-link <?php echo ($active==='mapa_frota') ? 'active' : ''; ?>" href="<?php echo $BASE_URL; ?>/mapa-frota/index.php">
+        <span class="nav-ico"><i class="bi bi-map-fill"></i></span>
+        <span>Mapa da Frota</span>
+      </a>
+
+      <a class="nav-link <?php echo ($active==='config') ? 'active' : ''; ?>" href="<?php echo $BASE_URL; ?>/configuracoes/index.php">
+        <span class="nav-ico"><i class="bi bi-gear-fill"></i></span>
+        <span>Configurações</span>
+      </a>
+
+    <?php else: ?>
+
+      <!-- MENU DO GESTOR / ADMIN -->
       <a class="nav-link <?php echo ($active==='dashboard') ? 'active' : ''; ?>" href="<?php echo $BASE_URL; ?>/index.php">
         <span class="nav-ico"><i class="bi bi-grid-1x2-fill"></i></span>
         <span>Painel</span>
@@ -85,13 +113,38 @@ if ($nomeUser) {
         <span class="nav-ico"><i class="bi bi-gear-fill"></i></span>
         <span>Configurações</span>
       </a>
+
+    <?php endif; ?>
+
     </nav>
 
     <div class="sidebar-user mt-auto pt-3">
-      <div class="small" style="opacity:.8;">Utilizador</div>
-      <div><strong><?php echo htmlspecialchars($_SESSION['user_nome'] ?? ''); ?></strong></div>
-      <div class="small" style="opacity:.8;">Perfil: <?php echo htmlspecialchars($_SESSION['user_perfil'] ?? ''); ?></div>
-
+      <?php
+        $perfil_badge = perfil_atual();
+        $badge_class  = match($perfil_badge) {
+          'admin'   => 'badge-perfil badge-admin',
+          'gestor'  => 'badge-perfil badge-gestor',
+          default   => 'badge-perfil badge-operario',
+        };
+        $badge_icon = match($perfil_badge) {
+          'admin'  => 'bi-shield-fill',
+          'gestor' => 'bi-briefcase-fill',
+          default  => 'bi-person-fill',
+        };
+        $badge_label = match($perfil_badge) {
+          'admin'  => 'Administrador',
+          'gestor' => 'Gestor de Frotas',
+          default  => 'Operário',
+        };
+      ?>
+      <div class="small" style="opacity:.65; font-size:11px; text-transform:uppercase; letter-spacing:.06em;">Utilizador</div>
+      <div class="fw-semibold mt-1"><?php echo htmlspecialchars($_SESSION['user_nome'] ?? ''); ?></div>
+      <div class="mt-2">
+        <span class="<?php echo $badge_class; ?>">
+          <i class="bi <?php echo $badge_icon; ?>"></i>
+          <?php echo $badge_label; ?>
+        </span>
+      </div>
       <a class="btn btn-outline-light w-100 mt-3" href="<?php echo $BASE_URL; ?>/logout.php">Sair</a>
     </div>
   </aside>

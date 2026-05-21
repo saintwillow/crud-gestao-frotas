@@ -549,3 +549,32 @@ body{
 .nav-ico i { font-size: 16px; }
 .kpi-ico i { font-size: 18px; }
 .list-ico i { font-size: 16px; }
+/* ── Badge de perfil na sidebar ── */
+.badge-perfil {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 20px;
+  letter-spacing: .03em;
+}
+
+.badge-admin {
+  background: rgba(239, 68, 68, .18);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, .3);
+}
+
+.badge-gestor {
+  background: rgba(59, 130, 246, .18);
+  color: #93c5fd;
+  border: 1px solid rgba(59, 130, 246, .3);
+}
+
+.badge-operario {
+  background: rgba(148, 163, 184, .15);
+  color: #cbd5e1;
+  border: 1px solid rgba(148, 163, 184, .25);
+}

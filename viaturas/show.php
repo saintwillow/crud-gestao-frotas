@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . "/../inc/auth.php";
-exigir_login();
+exigir_gestor_ou_admin();
 
 $active = 'viaturas';
 require_once __DIR__ . "/../inc/database.php";
@@ -204,8 +204,10 @@ $baseOperacional = trim(
     </div>
 
     <div class="d-flex flex-wrap gap-2">
-      <a class="btn btn-outline-primary" href="edit.php?id=<?php echo (int)$id; ?>">Editar</a>
-      <a class="btn btn-outline-danger" href="delete.php?id=<?php echo (int)$id; ?>">Apagar</a>
+      <?php if (in_array(perfil_atual(), ['admin', 'gestor'], true)): ?>
+        <a class="btn btn-outline-primary" href="edit.php?id=<?php echo (int)$id; ?>">Editar</a>
+        <a class="btn btn-outline-danger" href="delete.php?id=<?php echo (int)$id; ?>">Apagar</a>
+      <?php endif; ?>
     </div>
   </div>
 
@@ -316,7 +318,9 @@ $baseOperacional = trim(
 
   <div class="d-flex flex-wrap justify-content-end gap-2">
     <a href="index.php" class="btn btn-outline-secondary">Voltar</a>
-    <a href="edit.php?id=<?php echo (int)$id; ?>" class="btn btn-primary">Editar veículo</a>
+    <?php if (in_array(perfil_atual(), ['admin', 'gestor'], true)): ?>
+      <a href="edit.php?id=<?php echo (int)$id; ?>" class="btn btn-primary">Editar veículo</a>
+    <?php endif; ?>
   </div>
 
 </div>

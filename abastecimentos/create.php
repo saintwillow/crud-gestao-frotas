@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . "/../inc/auth.php";
-exigir_login();
+exigir_gestor_ou_admin();
 
 $active = 'abastecimentos';
 require_once __DIR__ . "/../inc/database.php";
@@ -61,32 +61,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
 
   if (!$erros) {
-    $vid = (int)$viatura_id;
-    $cid = ($colaborador_id === '') ? "NULL" : (string)((int)$colaborador_id);
+    $vid        = (int)$viatura_id;
+    $cid_val    = ($colaborador_id !== '' && (int)$colaborador_id > 0) ? (int)$colaborador_id : null;
+    $lit        = (float)$litros;
+    $pl         = (float)$preco_litro;
+    $total      = round($lit * $pl, 2);
+    $obs_val    = $observacoes !== '' ? $observacoes : null;
+    $lat_val    = $latitude !== '' ? (float)$latitude : null;
+    $lng_val    = $longitude !== '' ? (float)$longitude : null;
 
-    $posto_s = mysqli_real_escape_string($ligacao, $posto);
-    $comb_s = mysqli_real_escape_string($ligacao, $combustivel);
+    $stmt = mysqli_prepare($ligacao,
+      "INSERT INTO abastecimentos
+         (viatura_id, colaborador_id, posto, combustivel, litros, preco_litro, total, data_abastecimento, observacoes, latitude, longitude)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    );
+    mysqli_stmt_bind_param($stmt, "iissdddssdd",
+      $vid, $cid_val, $posto, $combustivel, $lit, $pl, $total,
+      $data_abastecimento, $obs_val, $lat_val, $lng_val
+    );
 
-    $lit = (float)$litros;
-    $pl = (float)$preco_litro;
-    $total = $lit * $pl;
-
-    $data_s = mysqli_real_escape_string($ligacao, $data_abastecimento);
-    $obs_sql = ($observacoes === '') ? "NULL" : ("'" . mysqli_real_escape_string($ligacao, $observacoes) . "'");
-    $lat_sql = ($latitude === '') ? "NULL" : number_format((float)$latitude, 7, '.', '');
-    $lng_sql = ($longitude === '') ? "NULL" : number_format((float)$longitude, 7, '.', '');
-
-    $sql = "INSERT INTO abastecimentos
-              (viatura_id, colaborador_id, posto, combustivel, litros, preco_litro, total, data_abastecimento, observacoes, latitude, longitude)
-            VALUES
-              ($vid, $cid, '$posto_s', '$comb_s', $lit, $pl, $total, '$data_s', $obs_sql, $lat_sql, $lng_sql)";
-
-    if (mysqli_query($ligacao, $sql)) {
+    if (mysqli_stmt_execute($stmt)) {
       header("Location: index.php?msg=criado");
       exit;
     } else {
       $erros[] = "Erro ao salvar: " . mysqli_error($ligacao);
     }
+    mysqli_stmt_close($stmt);
   }
 }
 ?>

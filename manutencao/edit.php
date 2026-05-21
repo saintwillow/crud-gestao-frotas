@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . "/../inc/auth.php";
-exigir_login();
+exigir_gestor_ou_admin();
 
 $active = 'manutencao';
 require_once __DIR__ . "/../inc/database.php";
@@ -11,8 +11,13 @@ function h($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 $id = (int)($_GET['id'] ?? 0);
 if ($id <= 0) { header("Location: index.php"); exit; }
 
-$res = mysqli_query($ligacao, "SELECT * FROM manutencoes WHERE id=$id LIMIT 1");
-$m = ($res && mysqli_num_rows($res) > 0) ? mysqli_fetch_assoc($res) : null;
+$stmt = mysqli_prepare($ligacao, "SELECT * FROM manutencoes WHERE id=? LIMIT 1");
+mysqli_stmt_bind_param($stmt, "i", $id);
+mysqli_stmt_execute($stmt);
+$res = mysqli_stmt_get_result($stmt);
+$m   = $res ? mysqli_fetch_assoc($res) : null;
+mysqli_stmt_close($stmt);
+
 if (!$m) {
   echo '<div class="page-max-4xl"><div class="glass-card p-4">Manutenção não encontrada.</div></div>';
   require_once __DIR__ . "/../inc/footer.php";
@@ -20,64 +25,56 @@ if (!$m) {
 }
 
 $erros = [];
-
-$viatura_id = (string)($m['viatura_id'] ?? '');
-$tipo = (string)($m['tipo'] ?? 'Preventiva');
-$descricao = (string)($m['descricao'] ?? '');
+$viatura_id  = (string)($m['viatura_id'] ?? '');
+$tipo        = (string)($m['tipo'] ?? 'Preventiva');
+$descricao   = (string)($m['descricao'] ?? '');
 $data_inicio = (string)($m['data_inicio'] ?? date('Y-m-d'));
-$data_fim = (string)($m['data_fim'] ?? '');
-$custo = (string)($m['custo'] ?? '');
-$oficina = (string)($m['oficina'] ?? '');
-$status = (string)($m['status'] ?? 'Agendada');
+$data_fim    = (string)($m['data_fim'] ?? '');
+$custo       = (string)($m['custo'] ?? '');
+$oficina     = (string)($m['oficina'] ?? '');
+$status      = (string)($m['status'] ?? 'Agendada');
 
 $viaturas = [];
 $resV = mysqli_query($ligacao, "SELECT id, matricula, marca_modelo FROM viaturas ORDER BY marca_modelo ASC");
 if ($resV) while ($r = mysqli_fetch_assoc($resV)) $viaturas[] = $r;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-  $viatura_id = trim($_POST['viatura_id'] ?? '');
-  $descricao = trim($_POST['descricao'] ?? '');
-  $tipo = trim($_POST['tipo'] ?? '');
+  $viatura_id  = trim($_POST['viatura_id'] ?? '');
+  $descricao   = trim($_POST['descricao'] ?? '');
+  $tipo        = trim($_POST['tipo'] ?? '');
   $data_inicio = trim($_POST['data_inicio'] ?? '');
-  $data_fim = trim($_POST['data_fim'] ?? '');
-  $custo = trim($_POST['custo'] ?? '');
-  $oficina = trim($_POST['oficina'] ?? '');
-  $status = trim($_POST['status'] ?? '');
+  $data_fim    = trim($_POST['data_fim'] ?? '');
+  $custo       = trim($_POST['custo'] ?? '');
+  $oficina     = trim($_POST['oficina'] ?? '');
+  $status      = trim($_POST['status'] ?? '');
 
   if ($viatura_id === '' || !ctype_digit($viatura_id)) $erros[] = "Selecione uma viatura.";
-  if ($descricao === '') $erros[] = "A descrição é obrigatória.";
+  if ($descricao === '')   $erros[] = "A descrição é obrigatória.";
   if ($data_inicio === '') $erros[] = "A data de início é obrigatória.";
   if ($data_fim !== '' && $data_fim < $data_inicio) $erros[] = "A data fim não pode ser menor que a data início.";
   if ($custo !== '' && !is_numeric($custo)) $erros[] = "O custo deve ser numérico (ou vazio).";
 
   if (!$erros) {
-    $vid = (int)$viatura_id;
+    $vid         = (int)$viatura_id;
+    $fim_val     = $data_fim !== '' ? $data_fim : null;
+    $oficina_val = $oficina !== '' ? $oficina : null;
+    $custo_val   = $custo !== '' ? (float)$custo : null;
 
-    $desc_s = mysqli_real_escape_string($ligacao, $descricao);
-    $tipo_s = mysqli_real_escape_string($ligacao, $tipo);
-    $ini_s = mysqli_real_escape_string($ligacao, $data_inicio);
-    $fim_s = ($data_fim === '') ? "NULL" : ("'".mysqli_real_escape_string($ligacao, $data_fim)."'");
-    $status_s = mysqli_real_escape_string($ligacao, $status);
-    $oficina_s = ($oficina === '') ? "NULL" : ("'".mysqli_real_escape_string($ligacao, $oficina)."'");
-    $custo_sql = ($custo === '') ? "NULL" : (float)$custo;
+    $stmt = mysqli_prepare($ligacao,
+      "UPDATE manutencoes SET viatura_id=?, tipo=?, descricao=?, data_inicio=?, data_fim=?,
+       custo=?, oficina=?, status=? WHERE id=?"
+    );
+    mysqli_stmt_bind_param($stmt, "issssdsi",
+      $vid, $tipo, $descricao, $data_inicio, $fim_val, $custo_val, $oficina_val, $status, $id
+    );
 
-    $sql = "UPDATE manutencoes SET
-              viatura_id=$vid,
-              tipo='$tipo_s',
-              descricao='$desc_s',
-              data_inicio='$ini_s',
-              data_fim=$fim_s,
-              custo=$custo_sql,
-              oficina=$oficina_s,
-              status='$status_s'
-            WHERE id=$id";
-
-    if (mysqli_query($ligacao, $sql)) {
+    if (mysqli_stmt_execute($stmt)) {
       header("Location: index.php?msg=editada");
       exit;
     } else {
       $erros[] = "Erro ao atualizar: " . mysqli_error($ligacao);
     }
+    mysqli_stmt_close($stmt);
   }
 }
 ?>
@@ -91,7 +88,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <h1 class="page-title">Editar Manutenção</h1>
       <div class="page-subtitle"><?php echo h($descricao); ?></div>
     </div>
-
     <a class="btn btn-outline-danger" href="delete.php?id=<?php echo (int)$id; ?>">Apagar</a>
   </div>
 
@@ -99,9 +95,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <div class="alert alert-danger">
       <strong>Verifique os campos:</strong>
       <ul class="mb-0">
-        <?php foreach ($erros as $e): ?>
-          <li><?php echo h($e); ?></li>
-        <?php endforeach; ?>
+        <?php foreach ($erros as $e): ?><li><?php echo h($e); ?></li><?php endforeach; ?>
       </ul>
     </div>
   <?php endif; ?>
@@ -114,9 +108,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <select name="viatura_id" class="form-select form-select-lg" required>
           <option value="">Selecione...</option>
           <?php foreach ($viaturas as $v): ?>
-            <?php $vid = (int)$v['id']; ?>
-            <option value="<?php echo $vid; ?>" <?php echo ((string)$viatura_id === (string)$vid) ? 'selected' : ''; ?>>
-              <?php echo h(($v['marca_modelo'] ?? '') . " • " . ($v['matricula'] ?? '')); ?>
+            <option value="<?php echo (int)$v['id']; ?>" <?php echo ((string)$viatura_id===(string)$v['id'])?'selected':''; ?>>
+              <?php echo h($v['marca_modelo'].' • '.$v['matricula']); ?>
             </option>
           <?php endforeach; ?>
         </select>
@@ -147,7 +140,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       </div>
 
       <div class="col-12 col-md-4">
-        <label class="form-label form-label-soft">Custo (R$)</label>
+        <label class="form-label form-label-soft">Custo (€)</label>
         <input type="number" step="0.01" min="0" name="custo" class="form-control form-control-lg" value="<?php echo h($custo); ?>">
       </div>
 

@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . "/../inc/auth.php";
-exigir_login();
+exigir_gestor_ou_admin();
 
 $active = 'mapa_abastecimentos';
 require_once __DIR__ . "/../inc/database.php";

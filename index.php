@@ -1,6 +1,6 @@
-<?php 
+<?php
 require_once __DIR__ . "/inc/auth.php";
-exigir_login();
+exigir_gestor_ou_admin();
 
 $active = 'dashboard';
 require_once __DIR__ . "/inc/database.php";
@@ -8,88 +8,152 @@ require_once __DIR__ . "/inc/header.php";
 
 function h($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 
-function fetchOneInt($ligacao, $sql, $field = 'total') {
-  $r = mysqli_query($ligacao, $sql);
-  if (!$r) return 0;
-  $row = mysqli_fetch_assoc($r);
-  return (int)($row[$field] ?? 0);
+// ── KPIs de viaturas ──────────────────────────────────────────────────────
+$totalVeiculos = 0; $emManutencao = 0; $ativos = 0; $inativos = 0;
+$r = mysqli_query($ligacao, "SELECT estado, COUNT(*) AS n FROM viaturas GROUP BY estado");
+if ($r) while ($row = mysqli_fetch_assoc($r)) {
+  $totalVeiculos += (int)$row['n'];
+  $e = $row['estado'];
+  if (in_array($e, ['Disponível','Atribuída'], true)) $ativos        += (int)$row['n'];
+  elseif ($e === 'Em Manutenção')                     $emManutencao  += (int)$row['n'];
+  elseif ($e === 'Inativo')                           $inativos      += (int)$row['n'];
 }
 
-$totalVeiculos = fetchOneInt($ligacao, "SELECT COUNT(*) AS total FROM viaturas");
-$emManutencao  = fetchOneInt($ligacao, "SELECT COUNT(*) AS total FROM viaturas WHERE estado='Em Manutenção'");
-$ativos        = fetchOneInt($ligacao, "SELECT COUNT(*) AS total FROM viaturas WHERE estado IN ('Disponível','Atribuída')");
-$inativos      = fetchOneInt($ligacao, "SELECT COUNT(*) AS total FROM viaturas WHERE estado='Inativo'");
+// ── Custo real do mês atual (manutenções + abastecimentos) ────────────────
+$mesAtual = date('Y-m');
+$r = mysqli_query($ligacao,
+  "SELECT COALESCE(SUM(custo),0) AS total FROM manutencoes
+   WHERE DATE_FORMAT(data_inicio,'%Y-%m')='$mesAtual'"
+);
+$custoManutencao = $r ? (float)(mysqli_fetch_assoc($r)['total'] ?? 0) : 0;
 
-$combustivelMedio = 58;
-$custoMensal = 22870;
+$r = mysqli_query($ligacao,
+  "SELECT COALESCE(SUM(total),0) AS total FROM abastecimentos
+   WHERE DATE_FORMAT(data_abastecimento,'%Y-%m')='$mesAtual'"
+);
+$custoCombustivel = $r ? (float)(mysqli_fetch_assoc($r)['total'] ?? 0) : 0;
+$custoMensal = $custoManutencao + $custoCombustivel;
 
-$fuelData = [
-  ["month" => "Set", "value" => 15200],
-  ["month" => "Out", "value" => 17800],
-  ["month" => "Nov", "value" => 16400],
-  ["month" => "Dez", "value" => 19100],
-  ["month" => "Jan", "value" => 17500],
-  ["month" => "Fev", "value" => 18750],
-];
+// ── Preço médio por litro este mês (substitui "combustível médio 58%") ────
+$r = mysqli_query($ligacao,
+  "SELECT COALESCE(AVG(preco_litro),0) AS media FROM abastecimentos
+   WHERE DATE_FORMAT(data_abastecimento,'%Y-%m')='$mesAtual'"
+);
+$precoMedioLitro = $r ? (float)(mysqli_fetch_assoc($r)['media'] ?? 0) : 0;
 
+// ── Gráfico: custo de combustível dos últimos 6 meses ─────────────────────
+$fuelData = [];
+for ($i = 5; $i >= 0; $i--) {
+  $mes = date('Y-m', strtotime("-$i months"));
+  $label = strftime('%b', strtotime("-$i months"));
+  // fallback se strftime não tiver locale
+  $meses_pt = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  $label = $meses_pt[(int)date('m', strtotime("-$i months")) - 1];
+
+  $r = mysqli_query($ligacao,
+    "SELECT COALESCE(SUM(total),0) AS total FROM abastecimentos
+     WHERE DATE_FORMAT(data_abastecimento,'%Y-%m')='$mes'"
+  );
+  $val = $r ? (float)(mysqli_fetch_assoc($r)['total'] ?? 0) : 0;
+  $fuelData[] = ['month' => $label, 'value' => round($val, 2)];
+}
+
+// ── Dados do donut de status ──────────────────────────────────────────────
 $statusData = [
-  ["name" => "Ativos",     "value" => $ativos,       "color" => "hsl(152, 60%, 40%)"],
-  ["name" => "Manutenção", "value" => $emManutencao, "color" => "hsl(38, 92%, 50%)"],
-  ["name" => "Inativos",   "value" => $inativos,     "color" => "hsl(0, 72%, 51%)"],
+  ['name' => 'Ativos',     'value' => $ativos,       'color' => 'hsl(152, 60%, 40%)'],
+  ['name' => 'Manutenção', 'value' => $emManutencao, 'color' => 'hsl(38, 92%, 50%)'],
+  ['name' => 'Inativos',   'value' => $inativos,     'color' => 'hsl(0, 72%, 51%)'],
 ];
 
-$recentSql = "
-  SELECT 
-    v.id, v.matricula, v.marca_modelo, v.estado,
-    m.nome AS motorista_nome
-  FROM viaturas v
-  LEFT JOIN motoristas m 
-    ON m.viatura_id = v.id AND m.status='Ativo'
-  ORDER BY v.id DESC
-  LIMIT 5
-";
-$recentRes = mysqli_query($ligacao, $recentSql);
+// ── Veículos recentes ─────────────────────────────────────────────────────
+$recentRes = mysqli_query($ligacao,
+  "SELECT v.id, v.matricula, v.marca_modelo, v.estado,
+          m.nome AS motorista_nome
+   FROM viaturas v
+   LEFT JOIN motoristas m ON m.viatura_id = v.id AND m.status='Ativo'
+   ORDER BY v.id DESC LIMIT 5"
+);
 
+// ── Manutenções pendentes ─────────────────────────────────────────────────
 $upcoming = [];
-$checkMan = mysqli_query($ligacao, "SHOW TABLES LIKE 'manutencoes'");
-if ($checkMan && mysqli_num_rows($checkMan) > 0) {
-  $manSql = "
-    SELECT m.id, m.descricao, m.data_inicio, m.data_fim, m.custo, m.status, v.matricula
-    FROM manutencoes m
-    LEFT JOIN viaturas v ON v.id = m.viatura_id
-    WHERE m.status IN ('Agendada','Em andamento','Pendente')
-    ORDER BY m.data_inicio ASC
-    LIMIT 5
-  ";
-  $manRes = mysqli_query($ligacao, $manSql);
-  if ($manRes) {
-    while ($row = mysqli_fetch_assoc($manRes)) $upcoming[] = $row;
-  }
-}
+$manRes = mysqli_query($ligacao,
+  "SELECT m.id, m.descricao, m.data_inicio, m.custo, m.status, v.matricula
+   FROM manutencoes m
+   LEFT JOIN viaturas v ON v.id = m.viatura_id
+   WHERE m.status IN ('Agendada','Em andamento','Pendente')
+   ORDER BY m.data_inicio ASC LIMIT 5"
+);
+if ($manRes) while ($row = mysqli_fetch_assoc($manRes)) $upcoming[] = $row;
+
+// ── Alertas: cartas de condução a vencer nos próximos 60 dias ────────────
+$alertasCarta = [];
+$hoje = date('Y-m-d');
+$limite60 = date('Y-m-d', strtotime('+60 days'));
+$alertaRes = mysqli_query($ligacao,
+  "SELECT nome, carta_categoria, carta_validade,
+          DATEDIFF(carta_validade, CURDATE()) AS dias_restantes
+   FROM motoristas
+   WHERE status='Ativo'
+     AND carta_validade IS NOT NULL
+     AND carta_validade <= '$limite60'
+   ORDER BY carta_validade ASC"
+);
+if ($alertaRes) while ($row = mysqli_fetch_assoc($alertaRes)) $alertasCarta[] = $row;
 
 function badgeEstadoDashboard($estado) {
   $estado = trim((string)$estado);
-  if ($estado === 'Disponível') return '<span class="badge-pill badge-success-soft">Ativo</span>';
-  if ($estado === 'Atribuída') return '<span class="badge-pill badge-info-soft">Em rota</span>';
+  if ($estado === 'Disponível')    return '<span class="badge-pill badge-success-soft">Ativo</span>';
+  if ($estado === 'Atribuída')     return '<span class="badge-pill badge-info-soft">Em rota</span>';
   if ($estado === 'Em Manutenção') return '<span class="badge-pill badge-warning-soft">Manutenção</span>';
-  if ($estado === 'Inativo') return '<span class="badge-pill badge-danger-soft">Inativo</span>';
+  if ($estado === 'Inativo')       return '<span class="badge-pill badge-danger-soft">Inativo</span>';
   return '<span class="badge-pill badge-info-soft">'.h($estado).'</span>';
 }
 ?>
 
+<!-- Cabeçalho -->
 <div class="mb-4">
   <h1 class="page-title">Painel de Controle</h1>
   <div class="page-subtitle">Visão geral da frota — AquaFleet</div>
 </div>
 
+<?php if (count($alertasCarta) > 0): ?>
+<!-- Faixa de alertas de carta -->
+<div class="glass-card p-3 mb-4" style="border-left: 3px solid hsl(38,92%,50%);">
+  <div class="d-flex align-items-center gap-2 mb-2">
+    <i class="bi bi-exclamation-triangle-fill" style="color:hsl(38,92%,50%);"></i>
+    <strong class="small">Cartas de condução a vencer nos próximos 60 dias</strong>
+  </div>
+  <div class="vstack gap-2">
+    <?php foreach ($alertasCarta as $a): ?>
+      <?php
+        $dias = (int)$a['dias_restantes'];
+        $cor  = $dias <= 0 ? 'badge-danger-soft' : ($dias <= 15 ? 'badge-warning-soft' : 'badge-info-soft');
+        $txt  = $dias <= 0 ? 'Expirada' : "Vence em {$dias}d";
+      ?>
+      <div class="d-flex align-items-center justify-content-between gap-2 small">
+        <div>
+          <span class="fw-semibold"><?php echo h($a['nome']); ?></span>
+          <span class="text-muted ms-2">Carta <?php echo h($a['carta_categoria'] ?? '—'); ?></span>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+          <span class="text-muted"><?php echo h($a['carta_validade']); ?></span>
+          <span class="badge-pill <?php echo $cor; ?>"><?php echo $txt; ?></span>
+        </div>
+      </div>
+    <?php endforeach; ?>
+  </div>
+</div>
+<?php endif; ?>
+
+<!-- KPIs -->
 <div class="row g-3 mb-4">
   <div class="col-12 col-sm-6 col-lg-3">
     <div class="glass-card stat-gradient p-3 h-100">
       <div class="d-flex justify-content-between align-items-start">
         <div>
           <div class="kpi-label">Total de Veículos</div>
-          <div class="kpi-value"><?php echo (int)$totalVeiculos; ?></div>
-          <div class="kpi-sub"><?php echo (int)$ativos; ?> operacionais</div>
+          <div class="kpi-value"><?php echo $totalVeiculos; ?></div>
+          <div class="kpi-sub"><?php echo $ativos; ?> operacionais</div>
         </div>
         <div class="kpi-ico"><i class="bi bi-car-front-fill fs-5"></i></div>
       </div>
@@ -101,9 +165,8 @@ function badgeEstadoDashboard($estado) {
       <div class="d-flex justify-content-between align-items-start">
         <div>
           <div class="kpi-label">Em Manutenção</div>
-          <div class="kpi-value"><?php echo (int)$emManutencao; ?></div>
-          <div class="kpi-sub">Manutenções pendentes</div>
-          <div class="small text-success mt-1">-1 vs. mês anterior</div>
+          <div class="kpi-value"><?php echo $emManutencao; ?></div>
+          <div class="kpi-sub"><?php echo count($upcoming); ?> pendentes</div>
         </div>
         <div class="kpi-ico"><i class="bi bi-tools fs-5"></i></div>
       </div>
@@ -114,9 +177,13 @@ function badgeEstadoDashboard($estado) {
     <div class="glass-card stat-gradient p-3 h-100">
       <div class="d-flex justify-content-between align-items-start">
         <div>
-          <div class="kpi-label">Combustível Médio</div>
-          <div class="kpi-value"><?php echo (int)$combustivelMedio; ?>%</div>
-          <div class="kpi-sub">Nível médio da frota</div>
+          <div class="kpi-label">Preço Médio/Litro</div>
+          <div class="kpi-value">
+            <?php echo $precoMedioLitro > 0
+              ? '€ ' . number_format($precoMedioLitro, 3, ',', '.')
+              : '—'; ?>
+          </div>
+          <div class="kpi-sub">Abastecimentos este mês</div>
         </div>
         <div class="kpi-ico"><i class="bi bi-fuel-pump-fill fs-5"></i></div>
       </div>
@@ -128,7 +195,7 @@ function badgeEstadoDashboard($estado) {
       <div class="d-flex justify-content-between align-items-start">
         <div>
           <div class="kpi-label">Custo Mensal</div>
-          <div class="kpi-value">€ <?php echo number_format((int)$custoMensal, 0, ',', '.'); ?></div>
+          <div class="kpi-value">€ <?php echo number_format($custoMensal, 0, ',', '.'); ?></div>
           <div class="kpi-sub">Manutenção + Combustível</div>
         </div>
         <div class="kpi-ico"><i class="bi bi-currency-euro fs-5"></i></div>
@@ -137,11 +204,12 @@ function badgeEstadoDashboard($estado) {
   </div>
 </div>
 
+<!-- Gráficos -->
 <div class="row g-3 mb-4">
   <div class="col-12 col-lg-8">
     <div class="glass-card p-4 h-100">
       <div class="d-flex justify-content-between align-items-center mb-3">
-        <h3 class="section-title mb-0">Custo de Combustível (€)</h3>
+        <h3 class="section-title mb-0">Custo de Combustível (€) — últimos 6 meses</h3>
       </div>
       <canvas id="fuelBarChart" height="110"></canvas>
     </div>
@@ -153,12 +221,11 @@ function badgeEstadoDashboard($estado) {
       <div class="d-flex justify-content-center">
         <canvas id="statusDonut" width="220" height="220"></canvas>
       </div>
-
       <div class="mt-3">
         <?php foreach ($statusData as $s): ?>
           <div class="d-flex align-items-center justify-content-between small py-1">
             <div class="d-flex align-items-center gap-2">
-              <span class="legend-dot" style="background: <?php echo h($s['color']); ?>;"></span>
+              <span class="legend-dot" style="background:<?php echo h($s['color']); ?>;"></span>
               <span class="text-muted"><?php echo h($s['name']); ?></span>
             </div>
             <strong><?php echo (int)$s['value']; ?></strong>
@@ -169,6 +236,7 @@ function badgeEstadoDashboard($estado) {
   </div>
 </div>
 
+<!-- Listas -->
 <div class="row g-3">
   <div class="col-12 col-lg-6">
     <div class="glass-card p-4 h-100">
@@ -176,10 +244,9 @@ function badgeEstadoDashboard($estado) {
         <h3 class="section-title mb-0">Veículos Recentes</h3>
         <a class="link-primary small" href="viaturas/index.php">Ver todos</a>
       </div>
-
       <div class="vstack gap-2">
         <?php if ($recentRes && mysqli_num_rows($recentRes) > 0): ?>
-          <?php while($v = mysqli_fetch_assoc($recentRes)): ?>
+          <?php while ($v = mysqli_fetch_assoc($recentRes)): ?>
             <a class="list-row" href="viaturas/show.php?id=<?php echo (int)$v['id']; ?>">
               <div class="list-ico"><i class="bi bi-car-front-fill"></i></div>
               <div class="flex-grow-1 min-w-0">
@@ -207,7 +274,6 @@ function badgeEstadoDashboard($estado) {
         <h3 class="section-title mb-0">Manutenções Pendentes</h3>
         <a class="link-primary small" href="manutencao/index.php">Ver todas</a>
       </div>
-
       <div class="vstack gap-2">
         <?php if (count($upcoming) > 0): ?>
           <?php foreach ($upcoming as $m): ?>
@@ -216,22 +282,16 @@ function badgeEstadoDashboard($estado) {
               <div class="flex-grow-1 min-w-0">
                 <div class="fw-semibold text-truncate"><?php echo h($m['descricao'] ?? 'Manutenção'); ?></div>
                 <div class="small text-muted">
-                  <?php echo h($m['matricula'] ?? '-'); ?> • <?php echo h($m['data_inicio'] ?? '-'); ?>
-                  • € <?php echo number_format((float)($m['custo'] ?? 0), 2, ',', '.'); ?>
+                  <?php echo h($m['matricula'] ?? '-'); ?> •
+                  <?php echo h($m['data_inicio'] ?? '-'); ?> •
+                  € <?php echo number_format((float)($m['custo'] ?? 0), 2, ',', '.'); ?>
                 </div>
               </div>
-
               <?php
-                $st = (string)($m['status'] ?? '');
-                $pill = 'badge-info-soft';
-                $label = 'Agendada';
-                if (stripos($st, 'andamento') !== false) {
-                  $pill = 'badge-warning-soft';
-                  $label = 'Em andamento';
-                } elseif ($st === 'Pendente') {
-                  $pill = 'badge-warning-soft';
-                  $label = 'Pendente';
-                }
+                $st    = (string)($m['status'] ?? '');
+                $pill  = 'badge-info-soft'; $label = 'Agendada';
+                if (stripos($st, 'andamento') !== false) { $pill = 'badge-warning-soft'; $label = 'Em andamento'; }
+                elseif ($st === 'Pendente')               { $pill = 'badge-warning-soft'; $label = 'Pendente'; }
               ?>
               <span class="badge-pill <?php echo $pill; ?>"><?php echo $label; ?></span>
             </div>
@@ -246,7 +306,7 @@ function badgeEstadoDashboard($estado) {
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
-  const fuelData = <?php echo json_encode($fuelData, JSON_UNESCAPED_UNICODE); ?>;
+  const fuelData   = <?php echo json_encode($fuelData,   JSON_UNESCAPED_UNICODE); ?>;
   const statusData = <?php echo json_encode($statusData, JSON_UNESCAPED_UNICODE); ?>;
 
   new Chart(document.getElementById('fuelBarChart'), {
@@ -264,18 +324,12 @@ function badgeEstadoDashboard($estado) {
       plugins: {
         legend: { display: false },
         tooltip: {
-          callbacks: {
-            label: (ctx) => '€ ' + Number(ctx.raw).toLocaleString('pt-PT')
-          }
+          callbacks: { label: (ctx) => '€ ' + Number(ctx.raw).toLocaleString('pt-PT') }
         }
       },
       scales: {
         x: { grid: { display: false } },
-        y: {
-          ticks: {
-            callback: (v) => '€ ' + Number(v).toLocaleString('pt-PT')
-          }
-        }
+        y: { ticks: { callback: (v) => '€ ' + Number(v).toLocaleString('pt-PT') } }
       }
     }
   });
@@ -292,11 +346,7 @@ function badgeEstadoDashboard($estado) {
         cutout: '65%'
       }]
     },
-    options: {
-      plugins: {
-        legend: { display: false }
-      }
-    }
+    options: { plugins: { legend: { display: false } } }
   });
 </script>
 

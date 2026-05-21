@@ -34,7 +34,10 @@ if (!$u) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-  mysqli_query($ligacao, "DELETE FROM usuarios WHERE id=$id LIMIT 1");
+  $del = mysqli_prepare($ligacao, "DELETE FROM usuarios WHERE id=? LIMIT 1");
+  mysqli_stmt_bind_param($del, "i", $id);
+  mysqli_stmt_execute($del);
+  mysqli_stmt_close($del);
   header("Location: usuarios.php?deleted=1");
   exit;
 }

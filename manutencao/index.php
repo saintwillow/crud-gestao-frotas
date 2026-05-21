@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . "/../inc/auth.php";
-exigir_login();
+exigir_gestor_ou_admin();
 
 $active = 'manutencao';
 require_once __DIR__ . "/../inc/database.php";
@@ -97,7 +97,9 @@ if ($res) while ($row = mysqli_fetch_assoc($res)) $rows[] = $row;
         <?php endif; ?>
       <?php endif; ?>
 
-      <a href="create.php" class="btn btn-primary">Nova Manutenção</a>
+      <?php if (in_array(perfil_atual(), ['admin', 'gestor'], true)): ?>
+        <a href="create.php" class="btn btn-primary">Nova Manutenção</a>
+      <?php endif; ?>
     </div>
   </div>
 
@@ -251,8 +253,10 @@ if ($res) while ($row = mysqli_fetch_assoc($res)) $rows[] = $row;
             </div>
 
             <div class="d-flex justify-content-end gap-2 mt-3">
-              <a class="btn btn-sm btn-outline-primary" href="edit.php?id=<?php echo $mid; ?>">Editar</a>
-              <a class="btn btn-sm btn-outline-danger" href="delete.php?id=<?php echo $mid; ?>">Apagar</a>
+              <?php if (in_array(perfil_atual(), ['admin', 'gestor'], true)): ?>
+                <a class="btn btn-sm btn-outline-primary" href="edit.php?id=<?php echo $mid; ?>">Editar</a>
+                <a class="btn btn-sm btn-outline-danger" href="delete.php?id=<?php echo $mid; ?>">Apagar</a>
+              <?php endif; ?>
             </div>
           </div>
         </div>
