@@ -2,66 +2,202 @@
 require_once __DIR__ . "/../inc/auth.php";
 exigir_gestor_ou_admin();
 
-$active = 'abastecimentos';
+$active = 'abastecimento';
+
 require_once __DIR__ . "/../inc/database.php";
 require_once __DIR__ . "/../inc/header.php";
 
-function h($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
+function h($s) {
+  return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
+}
+
+function fmtData($d) {
+  if (!$d) return '—';
+  $dt = DateTime::createFromFormat('Y-m-d', substr($d, 0, 10));
+  return $dt ? $dt->format('d/m/Y') : h($d);
+}
+
+function badgeEstadoAbastecimento($estado) {
+  $estado = (string)$estado;
+
+  if ($estado === 'registado') {
+    return '<span class="badge-pill badge-success-soft">Registado</span>';
+  }
+
+  if ($estado === 'em_analise') {
+    return '<span class="badge-pill badge-warning-soft">Em análise</span>';
+  }
+
+  if ($estado === 'corrigido') {
+    return '<span class="badge-pill badge-info-soft">Corrigido</span>';
+  }
+
+  if ($estado === 'anulado') {
+    return '<span class="badge-pill badge-danger-soft">Anulado</span>';
+  }
+
+  return '<span class="badge-pill badge-info-soft">' . h($estado) . '</span>';
+}
 
 $id = (int)($_GET['id'] ?? 0);
-if ($id <= 0) { header("Location: index.php"); exit; }
 
-$res = mysqli_query($ligacao, "SELECT * FROM abastecimentos WHERE id=$id LIMIT 1");
-$a = ($res && mysqli_num_rows($res) > 0) ? mysqli_fetch_assoc($res) : null;
+if ($id <= 0) {
+  header("Location: index.php");
+  exit;
+}
+
+$usuario_id = usuario_id_sessao();
+$erros = [];
+
+/* Buscar abastecimento */
+$stmt = mysqli_prepare($ligacao,
+  "SELECT
+      a.*,
+      v.matricula,
+      v.marca_modelo,
+      v.combustivel AS combustivel_viatura,
+      v.quilometragem AS viatura_quilometragem,
+      m.nome AS motorista_nome,
+      c.nome AS colaborador_nome,
+      u.nome AS registado_por_nome,
+      s.codigo AS servico_codigo,
+      s.km_inicio AS servico_km_inicio,
+      s.km_fim AS servico_km_fim
+   FROM abastecimentos a
+   LEFT JOIN viaturas v ON v.id = a.viatura_id
+   LEFT JOIN motoristas m ON m.id = a.motorista_id
+   LEFT JOIN colaboradores c ON c.id = a.colaborador_id
+   LEFT JOIN usuarios u ON u.id = a.registado_por_usuario_id
+   LEFT JOIN servicos_operacionais s ON s.id = a.servico_id
+   WHERE a.id = ?
+   LIMIT 1"
+);
+
+mysqli_stmt_bind_param($stmt, "i", $id);
+mysqli_stmt_execute($stmt);
+$res = mysqli_stmt_get_result($stmt);
+$a = $res ? mysqli_fetch_assoc($res) : null;
+mysqli_stmt_close($stmt);
 
 if (!$a) {
-  echo '<div class="page-max-4xl"><div class="glass-card p-4">Abastecimento não encontrado.</div></div>';
+  echo '<div class="glass-card p-4 text-center text-muted">Abastecimento não encontrado.</div>';
+  mysqli_close($ligacao);
   require_once __DIR__ . "/../inc/footer.php";
   exit;
 }
 
-$erros = [];
-
-$viatura_id = (string)($a['viatura_id'] ?? '');
-$colaborador_id = (string)($a['colaborador_id'] ?? '');
-$posto = (string)($a['posto'] ?? '');
-$combustivel = (string)($a['combustivel'] ?? 'Diesel');
-$litros = (string)($a['litros'] ?? '');
-$preco_litro = (string)($a['preco_litro'] ?? '');
+$posto              = (string)($a['posto'] ?? '');
+$combustivel        = (string)($a['combustivel'] ?? '');
+$litros             = (string)($a['litros'] ?? '');
+$preco_litro        = (string)($a['preco_litro'] ?? '');
+$km_atual           = $a['km_atual'] !== null ? (string)$a['km_atual'] : '';
 $data_abastecimento = (string)($a['data_abastecimento'] ?? date('Y-m-d'));
-$observacoes = (string)($a['observacoes'] ?? '');
-$latitude = isset($a['latitude']) && $a['latitude'] !== null ? (string)$a['latitude'] : '';
-$longitude = isset($a['longitude']) && $a['longitude'] !== null ? (string)$a['longitude'] : '';
+$observacoes        = (string)($a['observacoes'] ?? '');
+$latitude           = $a['latitude'] !== null ? (string)$a['latitude'] : '';
+$longitude          = $a['longitude'] !== null ? (string)$a['longitude'] : '';
+$estado             = (string)($a['estado'] ?? 'registado');
+$motivo_gestao      = (string)($a['motivo_rejeicao'] ?? '');
 
-$viaturas = [];
-$resV = mysqli_query($ligacao, "SELECT id, matricula, marca_modelo FROM viaturas ORDER BY marca_modelo ASC");
-if ($resV) while ($r = mysqli_fetch_assoc($resV)) $viaturas[] = $r;
+/* Ações rápidas de estado */
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao_estado'])) {
+  $acaoEstado = $_POST['acao_estado'];
+  $motivo = trim($_POST['motivo_gestao'] ?? '');
 
-$colaboradores = [];
-$resC = mysqli_query($ligacao, "SELECT id, nome FROM colaboradores ORDER BY nome ASC");
-if ($resC) while ($r = mysqli_fetch_assoc($resC)) $colaboradores[] = $r;
+  $novoEstado = null;
+  $redirectMsg = '';
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-  $viatura_id = trim($_POST['viatura_id'] ?? '');
-  $colaborador_id = trim($_POST['colaborador_id'] ?? '');
-  $posto = trim($_POST['posto'] ?? '');
-  $combustivel = trim($_POST['combustivel'] ?? '');
-  $litros = trim($_POST['litros'] ?? '');
-  $preco_litro = trim($_POST['preco_litro'] ?? '');
+  if ($acaoEstado === 'marcar_analise') {
+    $novoEstado = 'em_analise';
+    $redirectMsg = 'analisado';
+  } elseif ($acaoEstado === 'anular') {
+    $novoEstado = 'anulado';
+    $redirectMsg = 'anulado';
+  } elseif ($acaoEstado === 'restaurar') {
+    $novoEstado = 'registado';
+    $redirectMsg = 'editado';
+  }
+
+  if ($novoEstado === null) {
+    $erros[] = "Ação inválida.";
+  } else {
+    $motivo_val = $motivo !== '' ? $motivo : null;
+
+    $stmt = mysqli_prepare($ligacao,
+      "UPDATE abastecimentos
+       SET
+        estado = ?,
+        motivo_rejeicao = ?,
+        aprovado_por_usuario_id = ?,
+        aprovado_em = NOW()
+       WHERE id = ?"
+    );
+
+    mysqli_stmt_bind_param(
+      $stmt,
+      "ssii",
+      $novoEstado,
+      $motivo_val,
+      $usuario_id,
+      $id
+    );
+
+    if (mysqli_stmt_execute($stmt)) {
+      mysqli_stmt_close($stmt);
+      header("Location: index.php?msg=" . urlencode($redirectMsg));
+      exit;
+    } else {
+      $erros[] = "Erro ao alterar estado: " . mysqli_error($ligacao);
+      mysqli_stmt_close($stmt);
+    }
+  }
+}
+
+/* Correção completa dos dados */
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'salvar') {
+  $posto              = trim($_POST['posto'] ?? '');
+  $combustivel        = trim($_POST['combustivel'] ?? '');
+  $litros             = trim($_POST['litros'] ?? '');
+  $preco_litro        = trim($_POST['preco_litro'] ?? '');
+  $km_atual           = trim($_POST['km_atual'] ?? '');
   $data_abastecimento = trim($_POST['data_abastecimento'] ?? '');
-  $observacoes = trim($_POST['observacoes'] ?? '');
-  $latitude = trim($_POST['latitude'] ?? '');
-  $longitude = trim($_POST['longitude'] ?? '');
+  $observacoes        = trim($_POST['observacoes'] ?? '');
+  $latitude           = trim($_POST['latitude'] ?? '');
+  $longitude          = trim($_POST['longitude'] ?? '');
+  $estado             = trim($_POST['estado'] ?? 'corrigido');
+  $motivo_gestao      = trim($_POST['motivo_gestao'] ?? '');
 
-  if ($viatura_id === '' || !ctype_digit($viatura_id)) $erros[] = "Selecione uma viatura.";
-  if ($colaborador_id !== '' && !ctype_digit($colaborador_id)) $erros[] = "Motorista inválido.";
-  if ($posto === '') $erros[] = "O posto é obrigatório.";
-  if ($litros === '' || !is_numeric($litros) || (float)$litros <= 0) $erros[] = "Informe os litros (maior que 0).";
-  if ($preco_litro === '' || !is_numeric($preco_litro) || (float)$preco_litro <= 0) $erros[] = "Informe o preço por litro (maior que 0).";
-  if ($data_abastecimento === '') $erros[] = "A data é obrigatória.";
+  if (!in_array($estado, ['registado','em_analise','corrigido','anulado'], true)) {
+    $erros[] = "Estado inválido.";
+  }
 
-  if (($latitude !== '' && !is_numeric($latitude)) || ($longitude !== '' && !is_numeric($longitude))) {
-    $erros[] = "As coordenadas são inválidas.";
+  if ($litros === '' || !is_numeric($litros) || (float)$litros <= 0) {
+    $erros[] = "Informe os litros com valor maior que 0.";
+  }
+
+  if ($preco_litro === '' || !is_numeric($preco_litro) || (float)$preco_litro <= 0) {
+    $erros[] = "Informe o preço por litro com valor maior que 0.";
+  }
+
+  $km_atual_val = null;
+
+  if ($km_atual !== '') {
+    if (!ctype_digit($km_atual)) {
+      $erros[] = "A quilometragem deve ser um número válido.";
+    } else {
+      $km_atual_val = (int)$km_atual;
+    }
+  }
+
+  if ($data_abastecimento === '') {
+    $erros[] = "A data é obrigatória.";
+  }
+
+  if ($latitude !== '' && !is_numeric($latitude)) {
+    $erros[] = "Latitude inválida.";
+  }
+
+  if ($longitude !== '' && !is_numeric($longitude)) {
+    $erros[] = "Longitude inválida.";
   }
 
   if ($latitude !== '' && ((float)$latitude < -90 || (float)$latitude > 90)) {
@@ -73,49 +209,119 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
 
   if (!$erros) {
-    $vid        = (int)$viatura_id;
-    $cid_val    = ($colaborador_id !== '' && (int)$colaborador_id > 0) ? (int)$colaborador_id : null;
-    $lit        = (float)$litros;
-    $pl         = (float)$preco_litro;
-    $total      = round($lit * $pl, 2);
-    $obs_val    = $observacoes !== '' ? $observacoes : null;
-    $lat_val    = $latitude !== '' ? (float)$latitude : null;
-    $lng_val    = $longitude !== '' ? (float)$longitude : null;
+    $lit = (float)$litros;
+    $pl = (float)$preco_litro;
+    $total = round($lit * $pl, 2);
 
-    $stmt = mysqli_prepare($ligacao,
-      "UPDATE abastecimentos SET viatura_id=?, colaborador_id=?, posto=?, combustivel=?,
-       litros=?, preco_litro=?, total=?, data_abastecimento=?, observacoes=?, latitude=?, longitude=?
-       WHERE id=?"
-    );
-    mysqli_stmt_bind_param($stmt, "iissdddssdddi",
-      $vid, $cid_val, $posto, $combustivel, $lit, $pl, $total,
-      $data_abastecimento, $obs_val, $lat_val, $lng_val, $id
-    );
+    $posto_val = $posto !== '' ? $posto : null;
+    $obs_val = $observacoes !== '' ? $observacoes : null;
+    $lat_val = $latitude !== '' ? (float)$latitude : null;
+    $lng_val = $longitude !== '' ? (float)$longitude : null;
+    $motivo_val = $motivo_gestao !== '' ? $motivo_gestao : null;
 
-    if (mysqli_stmt_execute($stmt)) {
-      header("Location: index.php?msg=editado");
+    mysqli_begin_transaction($ligacao);
+
+    try {
+      $stmt = mysqli_prepare($ligacao,
+        "UPDATE abastecimentos
+         SET
+          posto = ?,
+          combustivel = ?,
+          litros = ?,
+          preco_litro = ?,
+          total = ?,
+          km_atual = ?,
+          data_abastecimento = ?,
+          observacoes = ?,
+          latitude = ?,
+          longitude = ?,
+          estado = ?,
+          motivo_rejeicao = ?,
+          aprovado_por_usuario_id = ?,
+          aprovado_em = NOW()
+         WHERE id = ?"
+      );
+
+      mysqli_stmt_bind_param(
+        $stmt,
+        "ssdddissddssii",
+        $posto_val,
+        $combustivel,
+        $lit,
+        $pl,
+        $total,
+        $km_atual_val,
+        $data_abastecimento,
+        $obs_val,
+        $lat_val,
+        $lng_val,
+        $estado,
+        $motivo_val,
+        $usuario_id,
+        $id
+      );
+
+      if (!mysqli_stmt_execute($stmt)) {
+        throw new Exception(mysqli_error($ligacao));
+      }
+
+      mysqli_stmt_close($stmt);
+
+      if ($km_atual_val !== null) {
+        $stmt = mysqli_prepare($ligacao,
+          "UPDATE viaturas
+           SET quilometragem = GREATEST(quilometragem, ?)
+           WHERE id = ?"
+        );
+
+        mysqli_stmt_bind_param($stmt, "ii", $km_atual_val, $a['viatura_id']);
+        mysqli_stmt_execute($stmt);
+        mysqli_stmt_close($stmt);
+      }
+
+      mysqli_commit($ligacao);
+
+      header("Location: index.php?msg=corrigido");
       exit;
-    } else {
-      $erros[] = "Erro ao atualizar: " . mysqli_error($ligacao);
+
+    } catch (Exception $e) {
+      mysqli_rollback($ligacao);
+      $erros[] = "Erro ao atualizar: " . $e->getMessage();
     }
-    mysqli_stmt_close($stmt);
   }
 }
+
+$temAlertas = false;
+$alertas = [];
+
+if (trim((string)$posto) === '') {
+  $temAlertas = true;
+  $alertas[] = 'Posto não informado';
+}
+
+if ($km_atual === '') {
+  $temAlertas = true;
+  $alertas[] = 'Km não informado';
+}
+
+if (empty($a['servico_id'])) {
+  $temAlertas = true;
+  $alertas[] = 'Sem serviço associado';
+}
+
+$motoristaNome = $a['motorista_nome'] ?: ($a['colaborador_nome'] ?: 'Não associado');
 ?>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 
 <style>
   #abastecimentoMap {
-    height: 340px;
+    height: 320px;
     border-radius: 16px;
     overflow: hidden;
     border: 1px solid rgba(15,23,42,.08);
   }
-  .map-hint {
-    font-size: 13px;
-    color: #64748b;
-  }
+
   .coords-box {
     background: #f8fafc;
     border: 1px solid rgba(15,23,42,.08);
@@ -124,18 +330,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     font-size: 13px;
     color: #334155;
   }
+
+  .map-hint {
+    font-size: 13px;
+    color:#64748b;
+  }
 </style>
 
 <div class="page-max-4xl space-y-6">
 
-  <a class="back-link" href="index.php">← Voltar ao abastecimento</a>
+  <a class="back-link" href="index.php">← Voltar aos abastecimentos</a>
 
-  <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-2">
+  <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-3">
     <div>
-      <h1 class="page-title">Editar Abastecimento</h1>
-      <div class="page-subtitle"><?php echo h($posto); ?></div>
+      <h1 class="page-title">Gerir Abastecimento</h1>
+      <div class="page-subtitle">
+        <?php echo h(($a['matricula'] ?? '—') . ' — ' . ($a['marca_modelo'] ?? '')); ?>
+      </div>
     </div>
-    <a class="btn btn-outline-danger" href="delete.php?id=<?php echo (int)$id; ?>">Apagar</a>
+
+    <div>
+      <?php echo badgeEstadoAbastecimento($estado); ?>
+    </div>
   </div>
 
   <?php if ($erros): ?>
@@ -149,74 +365,205 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
   <?php endif; ?>
 
+  <?php if ($temAlertas): ?>
+    <div class="glass-card p-3" style="border-left:3px solid hsl(38,92%,50%);">
+      <div class="fw-semibold mb-2">
+        <i class="bi bi-exclamation-triangle-fill me-1"></i>
+        Pontos de atenção
+      </div>
+
+      <div class="d-flex flex-wrap gap-2">
+        <?php foreach ($alertas as $al): ?>
+          <span class="badge-pill badge-warning-soft"><?php echo h($al); ?></span>
+        <?php endforeach; ?>
+      </div>
+    </div>
+  <?php endif; ?>
+
   <div class="glass-card p-4">
+    <h3 class="section-title mb-3">Resumo</h3>
+
+    <div class="row g-3">
+      <div class="col-12 col-md-4">
+        <div class="detail-label">Motorista</div>
+        <div class="detail-value"><?php echo h($motoristaNome); ?></div>
+      </div>
+
+      <div class="col-12 col-md-4">
+        <div class="detail-label">Registado por</div>
+        <div class="detail-value"><?php echo h($a['registado_por_nome'] ?: '—'); ?></div>
+      </div>
+
+      <div class="col-12 col-md-4">
+        <div class="detail-label">Serviço</div>
+        <div class="detail-value"><?php echo h($a['servico_codigo'] ?: '—'); ?></div>
+      </div>
+
+      <div class="col-12 col-md-4">
+        <div class="detail-label">Criado em</div>
+        <div class="detail-value"><?php echo h($a['criado_em'] ?? '—'); ?></div>
+      </div>
+
+      <div class="col-12 col-md-4">
+        <div class="detail-label">Km inicial serviço</div>
+        <div class="detail-value">
+          <?php echo !empty($a['servico_km_inicio']) ? number_format((int)$a['servico_km_inicio'], 0, ',', '.') . ' km' : '—'; ?>
+        </div>
+      </div>
+
+      <div class="col-12 col-md-4">
+        <div class="detail-label">Km final serviço</div>
+        <div class="detail-value">
+          <?php echo !empty($a['servico_km_fim']) ? number_format((int)$a['servico_km_fim'], 0, ',', '.') . ' km' : '—'; ?>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="glass-card p-4">
+    <h3 class="section-title mb-3">Ações rápidas do gestor</h3>
+
     <form method="post" class="row g-3">
-
       <div class="col-12">
-        <label class="form-label form-label-soft">Viatura *</label>
-        <select name="viatura_id" class="form-select form-select-lg" required>
-          <option value="">Selecione...</option>
-          <?php foreach ($viaturas as $v): ?>
-            <?php $vidOpt = (int)$v['id']; ?>
-            <option value="<?php echo $vidOpt; ?>" <?php echo ((string)$viatura_id === (string)$vidOpt) ? 'selected' : ''; ?>>
-              <?php echo h(($v['marca_modelo'] ?? '') . " • " . ($v['matricula'] ?? '')); ?>
-            </option>
-          <?php endforeach; ?>
-        </select>
+        <label class="form-label form-label-soft">Nota interna / motivo</label>
+        <textarea name="motivo_gestao" class="form-control" rows="3"><?php echo h($motivo_gestao); ?></textarea>
       </div>
 
-      <div class="col-12">
-        <label class="form-label form-label-soft">Motorista (opcional)</label>
-        <select name="colaborador_id" class="form-select form-select-lg">
-          <option value="">Sem motorista</option>
-          <?php foreach ($colaboradores as $c): ?>
-            <?php $cidOpt = (int)$c['id']; ?>
-            <option value="<?php echo $cidOpt; ?>" <?php echo ((string)$colaborador_id === (string)$cidOpt) ? 'selected' : ''; ?>>
-              <?php echo h($c['nome'] ?? ''); ?>
-            </option>
-          <?php endforeach; ?>
-        </select>
+      <div class="col-12 d-flex flex-wrap gap-2">
+        <button
+          class="btn btn-outline-warning"
+          type="submit"
+          name="acao_estado"
+          value="marcar_analise"
+        >
+          Marcar em análise
+        </button>
+
+        <button
+          class="btn btn-outline-danger"
+          type="submit"
+          name="acao_estado"
+          value="anular"
+          onclick="return confirm('Tem a certeza que deseja anular este abastecimento?');"
+        >
+          Anular abastecimento
+        </button>
+
+        <button
+          class="btn btn-outline-success"
+          type="submit"
+          name="acao_estado"
+          value="restaurar"
+        >
+          Restaurar como registado
+        </button>
       </div>
+    </form>
+  </div>
+
+  <div class="glass-card p-4">
+    <h3 class="section-title mb-3">Corrigir dados do abastecimento</h3>
+
+    <form method="post" class="row g-3">
+      <input type="hidden" name="acao" value="salvar">
 
       <div class="col-12 col-md-6">
-        <label class="form-label form-label-soft">Posto *</label>
-        <input name="posto" class="form-control form-control-lg" value="<?php echo h($posto); ?>" required>
+        <label class="form-label form-label-soft">Posto</label>
+        <input
+          name="posto"
+          class="form-control form-control-lg"
+          value="<?php echo h($posto); ?>"
+        >
       </div>
 
       <div class="col-12 col-md-6">
         <label class="form-label form-label-soft">Combustível</label>
         <select name="combustivel" class="form-select form-select-lg">
           <?php foreach (['Diesel','Gasolina','Etanol','Elétrico','Híbrido','Outro'] as $c): ?>
-            <option value="<?php echo h($c); ?>" <?php echo ($combustivel === $c) ? 'selected' : ''; ?>><?php echo h($c); ?></option>
+            <option value="<?php echo h($c); ?>" <?php echo ($combustivel === $c) ? 'selected' : ''; ?>>
+              <?php echo h($c); ?>
+            </option>
           <?php endforeach; ?>
         </select>
       </div>
 
-      <div class="col-12 col-md-4">
+      <div class="col-12 col-md-3">
         <label class="form-label form-label-soft">Litros *</label>
-        <input type="number" step="0.01" min="0" name="litros" class="form-control form-control-lg" value="<?php echo h($litros); ?>" required>
+        <input
+          type="number"
+          step="0.01"
+          min="0"
+          name="litros"
+          class="form-control form-control-lg"
+          value="<?php echo h($litros); ?>"
+          required
+        >
       </div>
 
-      <div class="col-12 col-md-4">
+      <div class="col-12 col-md-3">
         <label class="form-label form-label-soft">Preço/Litro *</label>
-        <input type="number" step="0.001" min="0" name="preco_litro" class="form-control form-control-lg" value="<?php echo h($preco_litro); ?>" required>
+        <input
+          type="number"
+          step="0.001"
+          min="0"
+          name="preco_litro"
+          class="form-control form-control-lg"
+          value="<?php echo h($preco_litro); ?>"
+          required
+        >
       </div>
 
-      <div class="col-12 col-md-4">
+      <div class="col-12 col-md-3">
+        <label class="form-label form-label-soft">Km atual</label>
+        <input
+          type="number"
+          step="1"
+          name="km_atual"
+          class="form-control form-control-lg"
+          value="<?php echo h($km_atual); ?>"
+        >
+      </div>
+
+      <div class="col-12 col-md-3">
         <label class="form-label form-label-soft">Data *</label>
-        <input type="date" name="data_abastecimento" class="form-control form-control-lg" value="<?php echo h($data_abastecimento); ?>" required>
+        <input
+          type="date"
+          name="data_abastecimento"
+          class="form-control form-control-lg"
+          value="<?php echo h($data_abastecimento); ?>"
+          required
+        >
+      </div>
+
+      <div class="col-12 col-md-6">
+        <label class="form-label form-label-soft">Estado</label>
+        <select name="estado" class="form-select form-select-lg">
+          <option value="registado" <?php echo $estado === 'registado' ? 'selected' : ''; ?>>Registado</option>
+          <option value="em_analise" <?php echo $estado === 'em_analise' ? 'selected' : ''; ?>>Em análise</option>
+          <option value="corrigido" <?php echo $estado === 'corrigido' ? 'selected' : ''; ?>>Corrigido</option>
+          <option value="anulado" <?php echo $estado === 'anulado' ? 'selected' : ''; ?>>Anulado</option>
+        </select>
+      </div>
+
+      <div class="col-12 col-md-6">
+        <label class="form-label form-label-soft">Nota interna / motivo</label>
+        <input
+          name="motivo_gestao"
+          class="form-control form-control-lg"
+          value="<?php echo h($motivo_gestao); ?>"
+        >
       </div>
 
       <div class="col-12">
-        <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2 mb-2">
+        <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
           <div>
-            <label class="form-label form-label-soft mb-1">Localização do abastecimento</label>
-            <div class="map-hint">Clique no mapa, arraste o marcador ou use a geolocalização.</div>
+            <label class="form-label form-label-soft mb-1">Localização</label>
+            <div class="map-hint">Clique no mapa ou use a geolocalização.</div>
           </div>
 
           <div class="d-flex gap-2">
-            <button type="button" class="btn btn-outline-primary btn-sm" id="btnGeo">Usar minha localização</button>
-            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClearCoords">Limpar ponto</button>
+            <button type="button" class="btn btn-outline-primary btn-sm" id="btnGeo">Usar localização</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClear">Limpar</button>
           </div>
         </div>
 
@@ -225,33 +572,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <input type="hidden" name="latitude" id="latitude" value="<?php echo h($latitude); ?>">
         <input type="hidden" name="longitude" id="longitude" value="<?php echo h($longitude); ?>">
 
-        <div class="coords-box mt-3" id="coordsText">
-          Nenhuma coordenada selecionada.
-        </div>
+        <div class="coords-box mt-3" id="coordsText">Nenhuma coordenada selecionada.</div>
       </div>
 
       <div class="col-12">
         <label class="form-label form-label-soft">Observações</label>
-        <textarea name="observacoes" class="form-control" rows="4"><?php echo h($observacoes); ?></textarea>
+        <textarea name="observacoes" class="form-control" rows="3"><?php echo h($observacoes); ?></textarea>
       </div>
 
       <div class="col-12 d-flex justify-content-end gap-2 pt-2">
         <a href="index.php" class="btn btn-outline-secondary">Cancelar</a>
-        <button class="btn btn-primary" type="submit">Salvar alterações</button>
+        <button class="btn btn-primary" type="submit">Salvar correção</button>
       </div>
 
     </form>
   </div>
-
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script>
-  const initialLat = <?php echo ($latitude !== '' ? json_encode((float)$latitude) : 'null'); ?>;
-  const initialLng = <?php echo ($longitude !== '' ? json_encode((float)$longitude) : 'null'); ?>;
 
-  const defaultCenter = [37.2301, -8.0653];
-  const map = L.map('abastecimentoMap').setView(defaultCenter, 9);
+<script>
+  const iLat = <?php echo ($latitude !== '' ? json_encode((float)$latitude) : 'null'); ?>;
+  const iLng = <?php echo ($longitude !== '' ? json_encode((float)$longitude) : 'null'); ?>;
+
+  const def = [37.2301, -8.0653];
+  const map = L.map('abastecimentoMap').setView(def, 9);
 
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
@@ -259,78 +604,61 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }).addTo(map);
 
   let marker = null;
-  const latInput = document.getElementById('latitude');
-  const lngInput = document.getElementById('longitude');
-  const coordsText = document.getElementById('coordsText');
 
-  function updateCoordsText(lat, lng) {
-    if (lat === null || lng === null) {
-      coordsText.textContent = 'Nenhuma coordenada selecionada.';
-      return;
-    }
-    coordsText.textContent = 'Latitude: ' + Number(lat).toFixed(7) + ' | Longitude: ' + Number(lng).toFixed(7);
+  const latI = document.getElementById('latitude');
+  const lngI = document.getElementById('longitude');
+  const txt = document.getElementById('coordsText');
+
+  function showCoords(lat, lng) {
+    txt.textContent = 'Lat: ' + Number(lat).toFixed(6) + ' | Lng: ' + Number(lng).toFixed(6);
   }
 
-  function ensureMarker(lat, lng) {
+  function setPoint(lat, lng, z = 15) {
     if (!marker) {
       marker = L.marker([lat, lng], { draggable: true }).addTo(map);
-      marker.on('dragend', function () {
-        const p = marker.getLatLng();
-        latInput.value = p.lat.toFixed(7);
-        lngInput.value = p.lng.toFixed(7);
-        updateCoordsText(p.lat, p.lng);
+
+      marker.on('dragend', function (e) {
+        const p = e.target.getLatLng();
+        latI.value = p.lat.toFixed(6);
+        lngI.value = p.lng.toFixed(6);
+        showCoords(p.lat, p.lng);
       });
     } else {
       marker.setLatLng([lat, lng]);
     }
-  }
 
-  function setPoint(lat, lng, zoomLevel = 15) {
-    ensureMarker(lat, lng);
-    latInput.value = Number(lat).toFixed(7);
-    lngInput.value = Number(lng).toFixed(7);
-    updateCoordsText(lat, lng);
-    map.setView([lat, lng], zoomLevel);
-  }
-
-  function clearPoint() {
-    if (marker) {
-      map.removeLayer(marker);
-      marker = null;
-    }
-    latInput.value = '';
-    lngInput.value = '';
-    updateCoordsText(null, null);
-    map.setView(defaultCenter, 9);
+    latI.value = Number(lat).toFixed(6);
+    lngI.value = Number(lng).toFixed(6);
+    showCoords(lat, lng);
+    map.setView([lat, lng], z);
   }
 
   map.on('click', function (e) {
     setPoint(e.latlng.lat, e.latlng.lng);
   });
 
-  document.getElementById('btnGeo').addEventListener('click', function () {
-    if (!navigator.geolocation) {
-      alert('Geolocalização não suportada neste navegador.');
-      return;
+  document.getElementById('btnGeo').onclick = function () {
+    if (!navigator.geolocation) return;
+
+    navigator.geolocation.getCurrentPosition(function (p) {
+      setPoint(p.coords.latitude, p.coords.longitude);
+    });
+  };
+
+  document.getElementById('btnClear').onclick = function () {
+    if (marker) {
+      map.removeLayer(marker);
+      marker = null;
     }
 
-    navigator.geolocation.getCurrentPosition(
-      function (pos) {
-        setPoint(pos.coords.latitude, pos.coords.longitude);
-      },
-      function () {
-        alert('Não foi possível obter a localização. Permite o acesso à geolocalização no navegador.');
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
-  });
+    latI.value = '';
+    lngI.value = '';
+    txt.textContent = 'Nenhuma coordenada selecionada.';
+    map.setView(def, 9);
+  };
 
-  document.getElementById('btnClearCoords').addEventListener('click', clearPoint);
-
-  if (initialLat !== null && initialLng !== null) {
-    setPoint(initialLat, initialLng, 13);
-  } else {
-    updateCoordsText(null, null);
+  if (iLat && iLng) {
+    setPoint(iLat, iLng, 13);
   }
 
   setTimeout(function () {

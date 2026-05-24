@@ -61,6 +61,11 @@ if ($nomeUser) {
         <span>Os meus abastecimentos</span>
       </a>
 
+      <a class="nav-link <?php echo ($active==='operario_ocorrencias') ? 'active' : ''; ?>" href="<?php echo $BASE_URL; ?>/operario/ocorrencias.php">
+        <span class="nav-ico"><i class="bi bi-exclamation-triangle-fill"></i></span>
+        <span>As minhas ocorrências</span>
+      </a>
+
       <a class="nav-link <?php echo ($active==='mapa_frota') ? 'active' : ''; ?>" href="<?php echo $BASE_URL; ?>/mapa-frota/index.php">
         <span class="nav-ico"><i class="bi bi-map-fill"></i></span>
         <span>Mapa da Frota</span>
@@ -107,6 +112,11 @@ if ($nomeUser) {
       <a class="nav-link <?php echo ($active==='motoristas') ? 'active' : ''; ?>" href="<?php echo $BASE_URL; ?>/motoristas/index.php">
         <span class="nav-ico"><i class="bi bi-person-fill"></i></span>
         <span>Motoristas</span>
+      </a>
+
+      <a class="nav-link <?php echo ($active==='ocorrencias') ? 'active' : ''; ?>" href="<?php echo $BASE_URL; ?>/ocorrencias/index.php">
+        <span class="nav-ico"><i class="bi bi-exclamation-triangle-fill"></i></span>
+        <span>Ocorrências</span>
       </a>
 
       <a class="nav-link <?php echo ($active==='config') ? 'active' : ''; ?>" href="<?php echo $BASE_URL; ?>/configuracoes/index.php">

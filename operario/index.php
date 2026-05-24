@@ -2,7 +2,6 @@
 require_once __DIR__ . "/../inc/auth.php";
 exigir_login();
 
-// Gestor e admin não têm nada a fazer aqui — vão para o dashboard geral
 if (is_gestor_ou_admin()) {
   header("Location: " . base_url() . "/index.php");
   exit;
@@ -12,22 +11,25 @@ $active = 'operario_painel';
 require_once __DIR__ . "/../inc/database.php";
 require_once __DIR__ . "/../inc/header.php";
 
-function h($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
+function h($s) {
+  return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
+}
+
 function fmtData($d) {
   if (!$d) return '—';
-  $dt = DateTime::createFromFormat('Y-m-d', substr($d,0,10));
+  $dt = DateTime::createFromFormat('Y-m-d', substr($d, 0, 10));
   return $dt ? $dt->format('d/m/Y') : h($d);
 }
 
 $motorista_id = motorista_id_sessao();
-$viatura_id   = viatura_id_sessao();
+$usuario_id = usuario_id_sessao();
 
-// ── Sem associação a motorista ──────────────────────────────────────────
 if (!$motorista_id) { ?>
   <div class="mb-4">
     <h1 class="page-title">O meu painel</h1>
     <div class="page-subtitle">Área pessoal do operário</div>
   </div>
+
   <div class="glass-card p-4 text-center" style="max-width:520px; margin:auto;">
     <i class="bi bi-person-x-fill fs-1 mb-3" style="color:hsl(38,92%,50%);"></i>
     <h2 class="h5 fw-bold mb-2">Conta ainda não configurada</h2>
@@ -42,13 +44,12 @@ if (!$motorista_id) { ?>
   exit;
 }
 
-// ── Dados do motorista ──────────────────────────────────────────────────
+/* Dados do motorista */
 $stmt = mysqli_prepare($ligacao,
-  "SELECT m.*, v.matricula, v.marca_modelo, v.tipo, v.combustivel,
-          v.quilometragem, v.estado AS viatura_estado
-   FROM motoristas m
-   LEFT JOIN viaturas v ON v.id = m.viatura_id
-   WHERE m.id = ? LIMIT 1"
+  "SELECT *
+   FROM motoristas
+   WHERE id = ?
+   LIMIT 1"
 );
 mysqli_stmt_bind_param($stmt, "i", $motorista_id);
 mysqli_stmt_execute($stmt);
@@ -63,32 +64,63 @@ if (!$mot) {
   exit;
 }
 
-// ── Últimos 5 abastecimentos do operário ─────────────────────────────────
-$ultAbast = [];
-if ($motorista_id) {
+/* Nova lógica: buscar viatura por atribuição aberta */
+$atribuicao = atribuicao_aberta_motorista($ligacao, $motorista_id);
+$viatura_id = $atribuicao ? (int)$atribuicao['viatura_id'] : null;
+
+/* Serviço operacional aberto */
+$servicoAberto = null;
+if ($viatura_id) {
   $stmt = mysqli_prepare($ligacao,
-    "SELECT a.id, a.posto, a.combustivel, a.litros, a.total, a.data_abastecimento,
-            v.matricula, v.marca_modelo
-     FROM abastecimentos a
-     LEFT JOIN viaturas v ON v.id = a.viatura_id
-     WHERE a.colaborador_id = ?
-     ORDER BY a.data_abastecimento DESC LIMIT 5"
+    "SELECT *
+     FROM servicos_operacionais
+     WHERE motorista_id = ?
+       AND estado = 'aberto'
+     ORDER BY data_inicio DESC, id DESC
+     LIMIT 1"
   );
   mysqli_stmt_bind_param($stmt, "i", $motorista_id);
   mysqli_stmt_execute($stmt);
-  $r = mysqli_stmt_get_result($stmt);
-  if ($r) while ($row = mysqli_fetch_assoc($r)) $ultAbast[] = $row;
+  $resServ = mysqli_stmt_get_result($stmt);
+  $servicoAberto = $resServ ? mysqli_fetch_assoc($resServ) : null;
   mysqli_stmt_close($stmt);
 }
 
-// ── Manutenções da viatura do operário ───────────────────────────────────
+/* Últimos abastecimentos */
+$ultAbast = [];
+$stmt = mysqli_prepare($ligacao,
+  "SELECT
+      a.id,
+      a.posto,
+      a.combustivel,
+      a.litros,
+      a.total,
+      a.data_abastecimento,
+      a.estado,
+      v.matricula,
+      v.marca_modelo
+   FROM abastecimentos a
+   LEFT JOIN viaturas v ON v.id = a.viatura_id
+   WHERE a.motorista_id = ?
+      OR a.colaborador_id = ?
+   ORDER BY a.data_abastecimento DESC, a.id DESC
+   LIMIT 5"
+);
+mysqli_stmt_bind_param($stmt, "ii", $motorista_id, $motorista_id);
+mysqli_stmt_execute($stmt);
+$r = mysqli_stmt_get_result($stmt);
+if ($r) while ($row = mysqli_fetch_assoc($r)) $ultAbast[] = $row;
+mysqli_stmt_close($stmt);
+
+/* Manutenções da viatura atual */
 $ultMan = [];
 if ($viatura_id) {
   $stmt = mysqli_prepare($ligacao,
     "SELECT id, descricao, tipo, data_inicio, data_fim, custo, status
      FROM manutencoes
      WHERE viatura_id = ?
-     ORDER BY data_inicio DESC LIMIT 5"
+     ORDER BY data_inicio DESC, id DESC
+     LIMIT 5"
   );
   mysqli_stmt_bind_param($stmt, "i", $viatura_id);
   mysqli_stmt_execute($stmt);
@@ -97,11 +129,12 @@ if ($viatura_id) {
   mysqli_stmt_close($stmt);
 }
 
-// ── Alerta de carta ───────────────────────────────────────────────────────
+/* Alerta carta */
 $diasCarta = null;
 if (!empty($mot['carta_validade'])) {
-  $diasCarta = (int)(new DateTime())->diff(new DateTime($mot['carta_validade']))->days
-               * ((new DateTime($mot['carta_validade'])) >= (new DateTime()) ? 1 : -1);
+  $hoje = new DateTime();
+  $validade = new DateTime($mot['carta_validade']);
+  $diasCarta = (int)$hoje->diff($validade)->days * ($validade >= $hoje ? 1 : -1);
 }
 ?>
 
@@ -123,91 +156,121 @@ if (!empty($mot['carta_validade'])) {
   </div>
 <?php endif; ?>
 
-<!-- KPIs pessoais -->
-<div class="row g-3 mb-4">
-  <div class="col-12 col-sm-6 col-lg-3">
-    <div class="glass-card stat-gradient p-3 h-100">
-      <div class="d-flex justify-content-between align-items-start">
-        <div>
-          <div class="kpi-label">Carta de Condução</div>
-          <div class="kpi-value" style="font-size:1.4rem;"><?php echo h($mot['carta_categoria'] ?: '—'); ?></div>
-          <div class="kpi-sub">Válida até <?php echo fmtData($mot['carta_validade']); ?></div>
-        </div>
-        <div class="kpi-ico"><i class="bi bi-card-text fs-5"></i></div>
-      </div>
-    </div>
-  </div>
+<!-- Serviço operacional -->
+<div class="glass-card p-4 mb-4" style="border-left:3px solid hsl(205,80%,40%);">
+  <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-3">
+    <div>
+      <h3 class="section-title mb-1">O Meu Serviço</h3>
 
-  <div class="col-12 col-sm-6 col-lg-3">
-    <div class="glass-card stat-gradient p-3 h-100">
-      <div class="d-flex justify-content-between align-items-start">
-        <div>
-          <div class="kpi-label">Total de Viagens</div>
-          <div class="kpi-value"><?php echo number_format((int)$mot['viagens'], 0, ',', '.'); ?></div>
-          <div class="kpi-sub">Desde <?php echo fmtData($mot['desde']); ?></div>
+      <?php if (!$viatura_id): ?>
+        <div class="text-muted">
+          Não existe nenhuma viatura atribuída neste momento.
         </div>
-        <div class="kpi-ico"><i class="bi bi-signpost-2-fill fs-5"></i></div>
-      </div>
+      <?php elseif ($servicoAberto): ?>
+        <div class="text-muted">
+          Serviço iniciado em
+          <strong><?php echo h(date('d/m/Y H:i', strtotime($servicoAberto['data_inicio']))); ?></strong>
+          com <?php echo number_format((int)$servicoAberto['km_inicio'], 0, ',', '.'); ?> km.
+        </div>
+      <?php else: ?>
+        <div class="text-muted">
+          Ainda não iniciou o serviço de hoje.
+        </div>
+      <?php endif; ?>
     </div>
-  </div>
 
-  <div class="col-12 col-sm-6 col-lg-3">
-    <div class="glass-card stat-gradient p-3 h-100">
-      <div class="d-flex justify-content-between align-items-start">
-        <div>
-          <div class="kpi-label">Viatura Atribuída</div>
-          <div class="kpi-value" style="font-size:1.1rem;"><?php echo $mot['matricula'] ? h($mot['matricula']) : '—'; ?></div>
-          <div class="kpi-sub"><?php echo $mot['marca_modelo'] ? h($mot['marca_modelo']) : 'Sem viatura'; ?></div>
-        </div>
-        <div class="kpi-ico"><i class="bi bi-car-front-fill fs-5"></i></div>
-      </div>
-    </div>
-  </div>
-
-  <div class="col-12 col-sm-6 col-lg-3">
-    <div class="glass-card stat-gradient p-3 h-100">
-      <div class="d-flex justify-content-between align-items-start">
-        <div>
-          <div class="kpi-label">Quilometragem</div>
-          <div class="kpi-value"><?php echo $mot['quilometragem'] ? number_format((int)$mot['quilometragem'], 0, ',', '.') : '—'; ?></div>
-          <div class="kpi-sub">km registados</div>
-        </div>
-        <div class="kpi-ico"><i class="bi bi-speedometer2 fs-5"></i></div>
-      </div>
+    <div>
+      <?php if ($viatura_id): ?>
+        <?php if ($servicoAberto): ?>
+          <a href="servico.php" class="btn btn-warning">
+            Continuar serviço
+          </a>
+        <?php else: ?>
+          <a href="servico.php" class="btn btn-primary">
+            Iniciar serviço
+          </a>
+        <?php endif; ?>
+      <?php endif; ?>
     </div>
   </div>
 </div>
 
-<!-- Viatura + dados pessoais -->
-<?php if ($viatura_id): ?>
+<!-- KPIs pessoais -->
+<div class="row g-3 mb-4">
+  <div class="col-12 col-sm-6 col-lg-3">
+    <div class="glass-card stat-gradient p-3 h-100">
+      <div class="kpi-label">Carta de Condução</div>
+      <div class="kpi-value" style="font-size:1.4rem;"><?php echo h($mot['carta_categoria'] ?: '—'); ?></div>
+      <div class="kpi-sub">Válida até <?php echo fmtData($mot['carta_validade']); ?></div>
+    </div>
+  </div>
+
+  <div class="col-12 col-sm-6 col-lg-3">
+    <div class="glass-card stat-gradient p-3 h-100">
+      <div class="kpi-label">Total de Viagens</div>
+      <div class="kpi-value"><?php echo number_format((int)$mot['viagens'], 0, ',', '.'); ?></div>
+      <div class="kpi-sub">Desde <?php echo fmtData($mot['desde']); ?></div>
+    </div>
+  </div>
+
+  <div class="col-12 col-sm-6 col-lg-3">
+    <div class="glass-card stat-gradient p-3 h-100">
+      <div class="kpi-label">Viatura Atribuída</div>
+      <div class="kpi-value" style="font-size:1.1rem;">
+        <?php echo $atribuicao ? h($atribuicao['matricula']) : '—'; ?>
+      </div>
+      <div class="kpi-sub">
+        <?php echo $atribuicao ? h($atribuicao['marca_modelo']) : 'Sem viatura'; ?>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-sm-6 col-lg-3">
+    <div class="glass-card stat-gradient p-3 h-100">
+      <div class="kpi-label">Quilometragem</div>
+      <div class="kpi-value">
+        <?php echo $atribuicao ? number_format((int)$atribuicao['quilometragem'], 0, ',', '.') : '—'; ?>
+      </div>
+      <div class="kpi-sub">km registados</div>
+    </div>
+  </div>
+</div>
+
+<?php if ($atribuicao): ?>
 <div class="row g-3 mb-4">
   <div class="col-12 col-lg-6">
     <div class="glass-card p-4 h-100">
       <h3 class="section-title mb-3">A minha viatura</h3>
+
       <div class="detail-grid">
         <div class="detail-item">
           <div class="detail-label">Matrícula</div>
-          <div class="detail-value fw-bold"><?php echo h($mot['matricula'] ?? '—'); ?></div>
+          <div class="detail-value fw-bold"><?php echo h($atribuicao['matricula']); ?></div>
         </div>
+
         <div class="detail-item">
           <div class="detail-label">Marca / Modelo</div>
-          <div class="detail-value"><?php echo h($mot['marca_modelo'] ?? '—'); ?></div>
+          <div class="detail-value"><?php echo h($atribuicao['marca_modelo']); ?></div>
         </div>
+
         <div class="detail-item">
           <div class="detail-label">Tipo</div>
-          <div class="detail-value"><?php echo h($mot['tipo'] ?? '—'); ?></div>
+          <div class="detail-value"><?php echo h($atribuicao['tipo']); ?></div>
         </div>
+
         <div class="detail-item">
           <div class="detail-label">Combustível</div>
-          <div class="detail-value"><?php echo h($mot['combustivel'] ?? '—'); ?></div>
+          <div class="detail-value"><?php echo h($atribuicao['combustivel']); ?></div>
         </div>
+
         <div class="detail-item">
           <div class="detail-label">Quilometragem</div>
-          <div class="detail-value"><?php echo number_format((int)($mot['quilometragem'] ?? 0), 0, ',', '.'); ?> km</div>
+          <div class="detail-value"><?php echo number_format((int)$atribuicao['quilometragem'], 0, ',', '.'); ?> km</div>
         </div>
+
         <div class="detail-item">
           <div class="detail-label">Estado</div>
-          <div class="detail-value"><?php echo h($mot['viatura_estado'] ?? '—'); ?></div>
+          <div class="detail-value"><?php echo h($atribuicao['viatura_estado']); ?></div>
         </div>
       </div>
     </div>
@@ -216,27 +279,33 @@ if (!empty($mot['carta_validade'])) {
   <div class="col-12 col-lg-6">
     <div class="glass-card p-4 h-100">
       <h3 class="section-title mb-3">Os meus dados</h3>
+
       <div class="detail-grid">
         <div class="detail-item">
           <div class="detail-label">Nome</div>
           <div class="detail-value fw-bold"><?php echo h($mot['nome']); ?></div>
         </div>
+
         <div class="detail-item">
           <div class="detail-label">NIF</div>
           <div class="detail-value"><?php echo h($mot['nif'] ?: '—'); ?></div>
         </div>
+
         <div class="detail-item">
           <div class="detail-label">Telefone</div>
           <div class="detail-value"><?php echo h($mot['telefone'] ?: '—'); ?></div>
         </div>
+
         <div class="detail-item">
           <div class="detail-label">E-mail</div>
           <div class="detail-value"><?php echo h($mot['email'] ?: '—'); ?></div>
         </div>
+
         <div class="detail-item">
           <div class="detail-label">Carta nº</div>
           <div class="detail-value"><?php echo h($mot['carta_numero'] ?: '—'); ?></div>
         </div>
+
         <div class="detail-item">
           <div class="detail-label">Estado</div>
           <div class="detail-value"><?php echo h($mot['status'] ?? '—'); ?></div>
@@ -247,7 +316,6 @@ if (!empty($mot['carta_validade'])) {
 </div>
 <?php endif; ?>
 
-<!-- Listas: abastecimentos + manutenções -->
 <div class="row g-3">
   <div class="col-12 col-lg-6">
     <div class="glass-card p-4 h-100">
@@ -255,19 +323,25 @@ if (!empty($mot['carta_validade'])) {
         <h3 class="section-title mb-0">Os meus abastecimentos</h3>
         <a class="link-primary small" href="<?php echo base_url(); ?>/operario/abastecimentos.php">Ver todos</a>
       </div>
+
       <div class="vstack gap-2">
         <?php if (count($ultAbast) > 0): ?>
           <?php foreach ($ultAbast as $a): ?>
             <div class="list-row no-link">
               <div class="list-ico"><i class="bi bi-fuel-pump-fill"></i></div>
+
               <div class="flex-grow-1 min-w-0">
                 <div class="fw-semibold text-truncate"><?php echo h($a['posto']); ?></div>
                 <div class="small text-muted">
                   <?php echo h($a['combustivel']); ?> •
                   <?php echo number_format((float)$a['litros'], 1, ',', '.'); ?>L •
                   <?php echo fmtData($a['data_abastecimento']); ?>
+                  <?php if (!empty($a['estado'])): ?>
+                    • <?php echo h($a['estado']); ?>
+                  <?php endif; ?>
                 </div>
               </div>
+
               <span class="fw-semibold small">€ <?php echo number_format((float)$a['total'], 2, ',', '.'); ?></span>
             </div>
           <?php endforeach; ?>
@@ -280,30 +354,39 @@ if (!empty($mot['carta_validade'])) {
 
   <div class="col-12 col-lg-6">
     <div class="glass-card p-4 h-100">
-      <div class="d-flex justify-content-between align-items-center mb-3">
-        <h3 class="section-title mb-0">Manutenções da minha viatura</h3>
-      </div>
+      <h3 class="section-title mb-3">Manutenções da minha viatura</h3>
+
       <div class="vstack gap-2">
         <?php if (count($ultMan) > 0): ?>
           <?php foreach ($ultMan as $m): ?>
             <?php
-              $st    = (string)($m['status'] ?? '');
-              $pill  = 'badge-info-soft'; $label = $st;
-              if ($st === 'Concluída')               { $pill = 'badge-success-soft'; }
-              elseif (stripos($st, 'andamento') !== false) { $pill = 'badge-warning-soft'; }
-              elseif ($st === 'Agendada')             { $pill = 'badge-info-soft'; }
+              $st = (string)($m['status'] ?? '');
+              $pill = 'badge-info-soft';
+
+              if ($st === 'Concluída') {
+                $pill = 'badge-success-soft';
+              } elseif (stripos($st, 'andamento') !== false) {
+                $pill = 'badge-warning-soft';
+              } elseif ($st === 'Cancelada') {
+                $pill = 'badge-danger-soft';
+              }
             ?>
+
             <div class="list-row no-link">
               <div class="list-ico warn"><i class="bi bi-tools"></i></div>
+
               <div class="flex-grow-1 min-w-0">
                 <div class="fw-semibold text-truncate"><?php echo h($m['descricao']); ?></div>
                 <div class="small text-muted">
                   <?php echo h($m['tipo']); ?> •
                   <?php echo fmtData($m['data_inicio']); ?>
-                  <?php if ($m['custo']): ?> • € <?php echo number_format((float)$m['custo'], 2, ',', '.'); ?><?php endif; ?>
+                  <?php if ($m['custo']): ?>
+                    • € <?php echo number_format((float)$m['custo'], 2, ',', '.'); ?>
+                  <?php endif; ?>
                 </div>
               </div>
-              <span class="badge-pill <?php echo $pill; ?>"><?php echo h($label); ?></span>
+
+              <span class="badge-pill <?php echo $pill; ?>"><?php echo h($st); ?></span>
             </div>
           <?php endforeach; ?>
         <?php else: ?>

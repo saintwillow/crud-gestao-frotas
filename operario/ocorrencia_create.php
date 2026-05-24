@@ -3,11 +3,11 @@ require_once __DIR__ . "/../inc/auth.php";
 exigir_login();
 
 if (is_gestor_ou_admin()) {
-  header("Location: " . base_url() . "/abastecimentos/create.php");
+  header("Location: " . base_url() . "/index.php");
   exit;
 }
 
-$active = 'operario_abastecimentos';
+$active = 'operario_ocorrencias';
 
 require_once __DIR__ . "/../inc/database.php";
 require_once __DIR__ . "/../inc/header.php";
@@ -16,9 +16,12 @@ function h($s) {
   return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
 }
 
+function gerar_codigo_ocorrencia(): string {
+  return 'OCR-' . date('Ymd-His') . '-' . random_int(100, 999);
+}
+
 $motorista_id = motorista_id_sessao();
 $usuario_id = usuario_id_sessao();
-$colaborador_id = colaborador_id_sessao();
 
 if (!$motorista_id) {
   echo '<div class="glass-card p-4 text-center text-muted">Conta não associada a motorista. Contacte o administrador.</div>';
@@ -27,18 +30,16 @@ if (!$motorista_id) {
   exit;
 }
 
-/*
-  A viatura vem da atribuição aberta, não da sessão.
-*/
+/* A viatura vem da atribuição aberta */
 $atribuicao = atribuicao_aberta_motorista($ligacao, $motorista_id);
 
 if (!$atribuicao) {
   ?>
   <div class="page-max-4xl space-y-6">
-    <a class="back-link" href="abastecimentos.php">← Voltar aos meus abastecimentos</a>
+    <a class="back-link" href="ocorrencias.php">← Voltar às minhas ocorrências</a>
 
     <div>
-      <h1 class="page-title">Novo Abastecimento</h1>
+      <h1 class="page-title">Nova Ocorrência</h1>
       <div class="page-subtitle">Não existe viatura atribuída neste momento.</div>
     </div>
 
@@ -46,7 +47,7 @@ if (!$atribuicao) {
       <i class="bi bi-car-front-fill fs-1 mb-3" style="color:hsl(38,92%,50%);"></i>
       <h2 class="h5 fw-bold mb-2">Sem viatura atribuída</h2>
       <p class="text-muted mb-0">
-        Não é possível registar abastecimento sem uma atribuição aberta.
+        Não é possível registar uma ocorrência sem uma atribuição de viatura aberta.
       </p>
     </div>
   </div>
@@ -58,9 +59,7 @@ if (!$atribuicao) {
 
 $viatura_id = (int)$atribuicao['viatura_id'];
 
-/*
-  O abastecimento do operário deve estar associado a um serviço aberto.
-*/
+/* A ocorrência deve estar associada a um serviço aberto */
 $servicoAberto = null;
 
 $stmt = mysqli_prepare($ligacao,
@@ -80,10 +79,10 @@ mysqli_stmt_close($stmt);
 if (!$servicoAberto) {
   ?>
   <div class="page-max-4xl space-y-6">
-    <a class="back-link" href="abastecimentos.php">← Voltar aos meus abastecimentos</a>
+    <a class="back-link" href="ocorrencias.php">← Voltar às minhas ocorrências</a>
 
     <div>
-      <h1 class="page-title">Novo Abastecimento</h1>
+      <h1 class="page-title">Nova Ocorrência</h1>
       <div class="page-subtitle">
         Viatura:
         <strong><?php echo h($atribuicao['matricula'] . ' — ' . $atribuicao['marca_modelo']); ?></strong>
@@ -94,7 +93,7 @@ if (!$servicoAberto) {
       <i class="bi bi-clock-history fs-1 mb-3" style="color:hsl(38,92%,50%);"></i>
       <h2 class="h5 fw-bold mb-2">Serviço ainda não iniciado</h2>
       <p class="text-muted mb-4">
-        Para registar um abastecimento, primeiro inicie o serviço operacional.
+        Para registar uma ocorrência com a viatura, primeiro inicie o serviço operacional de hoje.
       </p>
       <a href="servico.php" class="btn btn-primary">Iniciar serviço</a>
     </div>
@@ -109,52 +108,28 @@ $servico_id = (int)$servicoAberto['id'];
 
 $erros = [];
 
-$posto = '';
-$combustivel = $atribuicao['combustivel'] ?? 'Diesel';
-$litros = '';
-$preco_litro = '';
-$km_atual = '';
-$data_abastecimento = date('Y-m-d');
-$observacoes = '';
+$titulo = '';
+$tipo = 'avaria';
+$gravidade = 'media';
+$descricao = '';
 $latitude = '';
 $longitude = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-  $posto              = trim($_POST['posto'] ?? '');
-  $combustivel        = trim($_POST['combustivel'] ?? '');
-  $litros             = trim($_POST['litros'] ?? '');
-  $preco_litro        = trim($_POST['preco_litro'] ?? '');
-  $km_atual           = trim($_POST['km_atual'] ?? '');
-  $data_abastecimento = trim($_POST['data_abastecimento'] ?? '');
-  $observacoes        = trim($_POST['observacoes'] ?? '');
-  $latitude           = trim($_POST['latitude'] ?? '');
-  $longitude          = trim($_POST['longitude'] ?? '');
+  $titulo      = trim($_POST['titulo'] ?? '');
+  $tipo        = trim($_POST['tipo'] ?? 'outro');
+  $gravidade   = trim($_POST['gravidade'] ?? 'media');
+  $descricao   = trim($_POST['descricao'] ?? '');
+  $latitude    = trim($_POST['latitude'] ?? '');
+  $longitude   = trim($_POST['longitude'] ?? '');
+  $bloquear_viatura = isset($_POST['bloquear_viatura']) ? 1 : 0;
 
-  if ($litros === '' || !is_numeric($litros) || (float)$litros <= 0) {
-    $erros[] = "Informe os litros com valor maior que 0.";
+  if ($titulo === '') {
+    $erros[] = "O título é obrigatório.";
   }
 
-  if ($preco_litro === '' || !is_numeric($preco_litro) || (float)$preco_litro <= 0) {
-    $erros[] = "Informe o preço por litro com valor maior que 0.";
-  }
-
-  $km_atual_int = null;
-
-  if ($km_atual !== '') {
-    if (!ctype_digit($km_atual)) {
-      $erros[] = "A quilometragem deve ser um número válido.";
-    } else {
-      $km_atual_int = (int)$km_atual;
-      $km_minimo = (int)$servicoAberto['km_inicio'];
-
-      if ($km_atual_int < $km_minimo) {
-        $erros[] = "A quilometragem do abastecimento não pode ser menor que a quilometragem inicial do serviço ({$km_minimo} km).";
-      }
-    }
-  }
-
-  if ($data_abastecimento === '') {
-    $erros[] = "A data é obrigatória.";
+  if ($descricao === '') {
+    $erros[] = "A descrição detalhada é obrigatória.";
   }
 
   if ($latitude !== '' && !is_numeric($latitude)) {
@@ -173,63 +148,84 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $erros[] = "Longitude fora do intervalo válido.";
   }
 
+  // Tratamento de foto
+  $foto_db = null;
+  if (isset($_FILES['foto']) && $_FILES['foto']['error'] === UPLOAD_ERR_OK) {
+    $fileTmpPath = $_FILES['foto']['tmp_name'];
+    $fileName = $_FILES['foto']['name'];
+    $fileSize = $_FILES['foto']['size'];
+    $fileType = $_FILES['foto']['type'];
+    $fileNameCmps = explode(".", $fileName);
+    $fileExtension = strtolower(end($fileNameCmps));
+
+    $allowedExtensions = ['jpg', 'jpeg', 'png', 'gif'];
+    if (in_array($fileExtension, $allowedExtensions)) {
+      if ($fileSize <= 5242880) { // 5MB max
+        $newFileName = md5(time() . $fileName) . '.' . $fileExtension;
+        
+        $uploadFileDir = __DIR__ . '/../img/uploads/ocorrencias/';
+        if (!is_dir($uploadFileDir)) {
+          mkdir($uploadFileDir, 0755, true);
+        }
+
+        $dest_path = $uploadFileDir . $newFileName;
+        if (move_uploaded_file($fileTmpPath, $dest_path)) {
+          $foto_db = 'img/uploads/ocorrencias/' . $newFileName;
+        } else {
+          $erros[] = "Erro ao mover a foto para a pasta de uploads.";
+        }
+      } else {
+        $erros[] = "A foto excede o limite de tamanho de 5MB.";
+      }
+    } else {
+      $erros[] = "Formato de arquivo inválido. Apenas JPG, JPEG, PNG e GIF são permitidos.";
+    }
+  }
+
   if (!$erros) {
-    $lit = (float)$litros;
-    $pl = (float)$preco_litro;
-    $total = round($lit * $pl, 2);
-
-    $posto_val = $posto !== '' ? $posto : null;
-    $km_atual_val = $km_atual !== '' ? (int)$km_atual : null;
-
-    $obs_val = $observacoes !== '' ? $observacoes : null;
+    $codigo = gerar_codigo_ocorrencia();
     $lat_val = $latitude !== '' ? (float)$latitude : null;
     $lng_val = $longitude !== '' ? (float)$longitude : null;
-    $estado = 'registado';
+    $estado = 'aberta';
 
     mysqli_begin_transaction($ligacao);
 
     try {
       $stmt = mysqli_prepare($ligacao,
-        "INSERT INTO abastecimentos
+        "INSERT INTO ocorrencias
           (
-            viatura_id,
-            colaborador_id,
-            motorista_id,
-            registado_por_usuario_id,
+            codigo,
             servico_id,
-            posto,
-            combustivel,
-            litros,
-            preco_litro,
-            total,
-            km_atual,
-            data_abastecimento,
-            observacoes,
+            viatura_id,
+            motorista_id,
+            criado_por_usuario_id,
+            tipo,
+            gravidade,
+            titulo,
+            descricao,
             latitude,
             longitude,
+            foto,
             estado
           )
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
       );
 
       mysqli_stmt_bind_param(
         $stmt,
-        "iiiiissdddissdds",
+        "siiiissssddss",
+        $codigo,
+        $servico_id,
         $viatura_id,
-        $colaborador_id,
         $motorista_id,
         $usuario_id,
-        $servico_id,
-        $posto_val,
-        $combustivel,
-        $lit,
-        $pl,
-        $total,
-        $km_atual_val,
-        $data_abastecimento,
-        $obs_val,
+        $tipo,
+        $gravidade,
+        $titulo,
+        $descricao,
         $lat_val,
         $lng_val,
+        $foto_db,
         $estado
       );
 
@@ -239,25 +235,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       mysqli_stmt_close($stmt);
 
-      if ($km_atual_val !== null) {
+      // Se o motorista marcou a viatura como incapacitada (bloquear viatura)
+      if ($bloquear_viatura) {
+        $obs = "Bloqueio automático por relato de ocorrência crítica (" . $codigo . ") pelo motorista.";
         $stmt = mysqli_prepare($ligacao,
           "UPDATE viaturas
-           SET quilometragem = GREATEST(quilometragem, ?)
+           SET estado = 'Em Manutenção',
+               observacoes = CONCAT(COALESCE(observacoes, ''), '\n', ?)
            WHERE id = ?"
         );
-        mysqli_stmt_bind_param($stmt, "ii", $km_atual_val, $viatura_id);
+        mysqli_stmt_bind_param($stmt, "si", $obs, $viatura_id);
         mysqli_stmt_execute($stmt);
         mysqli_stmt_close($stmt);
       }
 
       mysqli_commit($ligacao);
 
-      header("Location: abastecimentos.php?msg=criado");
+      header("Location: ocorrencias.php?msg=criada");
       exit;
 
     } catch (Exception $e) {
       mysqli_rollback($ligacao);
-      $erros[] = "Erro ao salvar: " . $e->getMessage();
+      $erros[] = "Erro ao guardar a ocorrência: " . $e->getMessage();
     }
   }
 }
@@ -266,7 +265,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 
 <style>
-  #abastecimentoMap {
+  #ocorrenciaMap {
     height: 320px;
     border-radius: 16px;
     overflow: hidden;
@@ -289,10 +288,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </style>
 
 <div class="page-max-4xl space-y-6">
-  <a class="back-link" href="abastecimentos.php">← Voltar aos meus abastecimentos</a>
+  <a class="back-link" href="ocorrencias.php">← Voltar às minhas ocorrências</a>
 
   <div>
-    <h1 class="page-title">Novo Abastecimento</h1>
+    <h1 class="page-title">Reportar Ocorrência</h1>
     <div class="page-subtitle">
       Viatura:
       <strong><?php echo h($atribuicao['matricula'] . ' — ' . $atribuicao['marca_modelo']); ?></strong>
@@ -314,91 +313,84 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <?php endif; ?>
 
   <div class="glass-card p-4">
-    <form method="post" class="row g-3">
+    <form method="post" enctype="multipart/form-data" class="row g-3">
 
       <div class="col-12 col-md-6">
-        <label class="form-label form-label-soft">Posto</label>
+        <label class="form-label form-label-soft">Título Curto do Problema *</label>
         <input
-          name="posto"
+          name="titulo"
           class="form-control form-control-lg"
-          value="<?php echo h($posto); ?>"
+          placeholder="Ex: Pneu furado, Ruído no motor, Luz da bateria acesa"
+          value="<?php echo h($titulo); ?>"
+          required
         >
       </div>
 
-      <div class="col-12 col-md-6">
-        <label class="form-label form-label-soft">Combustível</label>
-        <select name="combustivel" class="form-select form-select-lg">
-          <?php foreach (['Diesel','Gasolina','Etanol','Elétrico','Híbrido','Outro'] as $c): ?>
-            <option value="<?php echo h($c); ?>" <?php echo ($combustivel === $c) ? 'selected' : ''; ?>>
-              <?php echo h($c); ?>
-            </option>
-          <?php endforeach; ?>
+      <div class="col-12 col-md-3">
+        <label class="form-label form-label-soft">Tipo *</label>
+        <select name="tipo" class="form-select form-select-lg">
+          <option value="avaria" <?php echo ($tipo === 'avaria') ? 'selected' : ''; ?>>Avaria Mecânica</option>
+          <option value="acidente" <?php echo ($tipo === 'acidente') ? 'selected' : ''; ?>>Acidente/Colisão</option>
+          <option value="dano" <?php echo ($tipo === 'dano') ? 'selected' : ''; ?>>Dano no Veículo</option>
+          <option value="documentacao" <?php echo ($tipo === 'documentacao') ? 'selected' : ''; ?>>Problema com Documentos</option>
+          <option value="seguranca" <?php echo ($tipo === 'seguranca') ? 'selected' : ''; ?>>Problema de Segurança</option>
+          <option value="outro" <?php echo ($tipo === 'outro') ? 'selected' : ''; ?>>Outro</option>
         </select>
       </div>
 
       <div class="col-12 col-md-3">
-        <label class="form-label form-label-soft">Litros *</label>
-        <input
-          type="number"
-          step="0.01"
-          min="0"
-          name="litros"
-          class="form-control form-control-lg"
-          value="<?php echo h($litros); ?>"
-          required
-        >
+        <label class="form-label form-label-soft">Gravidade *</label>
+        <select name="gravidade" class="form-select form-select-lg">
+          <option value="baixa" <?php echo ($gravidade === 'baixa') ? 'selected' : ''; ?>>Baixa (Dá para seguir rota)</option>
+          <option value="media" <?php echo ($gravidade === 'media') ? 'selected' : ''; ?>>Média (Problema incomodativo)</option>
+          <option value="alta" <?php echo ($gravidade === 'alta') ? 'selected' : ''; ?>>Alta (Problema grave de circulação)</option>
+          <option value="critica" <?php echo ($gravidade === 'critica') ? 'selected' : ''; ?>>Crítica (Viatura imobilizada)</option>
+        </select>
       </div>
 
-      <div class="col-12 col-md-3">
-        <label class="form-label form-label-soft">Preço/Litro *</label>
-        <input
-          type="number"
-          step="0.001"
-          min="0"
-          name="preco_litro"
-          class="form-control form-control-lg"
-          value="<?php echo h($preco_litro); ?>"
+      <div class="col-12">
+        <label class="form-label form-label-soft">Descrição Detalhada do Incidente *</label>
+        <textarea 
+          name="descricao" 
+          class="form-control" 
+          rows="5" 
+          placeholder="Descreva o que aconteceu, quando começou o problema, se ouve ruídos estranhos, etc."
           required
-        >
+        ><?php echo h($descricao); ?></textarea>
       </div>
 
-      <div class="col-12 col-md-3">
-        <label class="form-label form-label-soft">Km atual</label>
-        <input
-          type="number"
-          step="1"
-          min="<?php echo (int)$servicoAberto['km_inicio']; ?>"
-          name="km_atual"
-          class="form-control form-control-lg"
-          value="<?php echo h($km_atual); ?>"
-        >
+      <div class="col-12 col-md-6">
+        <label class="form-label form-label-soft">Foto / Comprovativo do Problema</label>
+        <input type="file" name="foto" class="form-control form-control-lg" accept="image/*">
+        <div class="form-text">Opcional. Formato JPG, PNG ou GIF. Máx 5MB.</div>
       </div>
 
-      <div class="col-12 col-md-3">
-        <label class="form-label form-label-soft">Data *</label>
-        <input
-          type="date"
-          name="data_abastecimento"
-          class="form-control form-control-lg"
-          value="<?php echo h($data_abastecimento); ?>"
-          required
-        >
+      <div class="col-12 col-md-6 d-flex align-items-center">
+        <div class="form-check p-3 border rounded w-100" style="border-color: rgba(220, 38, 38, 0.25) !important; background-color: rgba(220, 38, 38, 0.02);">
+          <input class="form-check-input ms-0 me-2" type="checkbox" name="bloquear_viatura" id="bloquear_viatura">
+          <label class="form-check-label fw-bold text-danger" for="bloquear_viatura">
+            Viatura incapacitada de circular? (Bloqueia viatura para manutenção)
+          </label>
+          <div class="form-text text-muted ms-4">
+            Selecione apenas se a viatura não puder circular em segurança. Isso alterará o estado dela para "Em Manutenção" imediatamente.
+          </div>
+        </div>
       </div>
 
       <div class="col-12">
         <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
           <div>
-            <label class="form-label form-label-soft mb-1">Localização</label>
-            <div class="map-hint">Clique no mapa ou use a geolocalização.</div>
+            <label class="form-label form-label-soft mb-1">Localização Exata do Incidente</label>
+            <div class="map-hint">Clique no mapa para marcar o local exato da ocorrência ou use o GPS do dispositivo.</div>
           </div>
 
           <div class="d-flex gap-2">
-            <button type="button" class="btn btn-outline-primary btn-sm" id="btnGeo">Usar localização</button>
-            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClear">Limpar</button>
+            <button type="button" class="btn btn-outline-primary btn-sm" id="btnGeo">Usar minha localização</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClear">Limpar mapa</button>
           </div>
         </div>
 
-        <div id="abastecimentoMap"></div>
+        <div id="ocorrenciaMap"></div>
 
         <input type="hidden" name="latitude" id="latitude" value="<?php echo h($latitude); ?>">
         <input type="hidden" name="longitude" id="longitude" value="<?php echo h($longitude); ?>">
@@ -406,14 +398,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="coords-box mt-3" id="coordsText">Nenhuma coordenada selecionada.</div>
       </div>
 
-      <div class="col-12">
-        <label class="form-label form-label-soft">Observações</label>
-        <textarea name="observacoes" class="form-control" rows="3"><?php echo h($observacoes); ?></textarea>
-      </div>
-
       <div class="col-12 d-flex justify-content-end gap-2 pt-2">
-        <a href="abastecimentos.php" class="btn btn-outline-secondary">Cancelar</a>
-        <button class="btn btn-primary" type="submit">Salvar abastecimento</button>
+        <a href="ocorrencias.php" class="btn btn-outline-secondary">Cancelar</a>
+        <button class="btn btn-danger" type="submit" style="background-color: #dc2626; border-color: #dc2626;">Reportar Ocorrência</button>
       </div>
 
     </form>
@@ -427,7 +414,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   const iLng = <?php echo ($longitude !== '' ? json_encode((float)$longitude) : 'null'); ?>;
 
   const def = [37.2301, -8.0653];
-  const map = L.map('abastecimentoMap').setView(def, 9);
+  const map = L.map('ocorrenciaMap').setView(def, 9);
 
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
