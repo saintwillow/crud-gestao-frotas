@@ -22,9 +22,12 @@ function fmtData($d) {
   return $dt ? $dt->format('d/m/Y') : h($d);
 }
 
-function badgeEstadoAbastecimento($estado) {
-  $estado = (string)$estado;
+function badgeEstadoAbastecimento($a) {
+  if (!empty($a['aprovado_por_usuario_id'])) {
+    return '<span class="badge-pill badge-success-soft"><i class="bi bi-check-circle-fill me-1"></i>Aprovado</span>';
+  }
 
+  $estado = (string)($a['estado'] ?? 'registado');
   if ($estado === 'registado') {
     return '<span class="badge-pill badge-success-soft">Registado</span>';
   }
@@ -106,6 +109,8 @@ $stmt = mysqli_prepare($ligacao,
       a.latitude,
       a.longitude,
       a.estado,
+      a.aprovado_por_usuario_id,
+      a.comprovativo,
       a.servico_id,
       v.matricula,
       v.marca_modelo,
@@ -248,8 +253,15 @@ $msg = $_GET['msg'] ?? '';
                 € <?php echo number_format((float)$a['total'], 2, ',', '.'); ?>
               </div>
               <div class="mt-1">
-                <?php echo badgeEstadoAbastecimento($a['estado']); ?>
+                <?php echo badgeEstadoAbastecimento($a); ?>
               </div>
+              <?php if (!empty($a['comprovativo'])): ?>
+                <div class="mt-1">
+                  <a class="btn btn-xs btn-outline-info py-0 px-2 text-decoration-none" style="font-size:10px;" href="<?php echo base_url() . '/' . h($a['comprovativo']); ?>" target="_blank">
+                    <i class="bi bi-file-earmark-text me-1"></i> Recibo
+                  </a>
+                </div>
+              <?php endif; ?>
             </div>
           </div>
         </div>

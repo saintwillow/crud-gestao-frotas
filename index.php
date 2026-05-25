@@ -100,6 +100,17 @@ $alertaRes = mysqli_query($ligacao,
 );
 if ($alertaRes) while ($row = mysqli_fetch_assoc($alertaRes)) $alertasCarta[] = $row;
 
+// ── Alertas: Ocorrências críticas/altas ativas ─────────────────────────────
+$alertasOcorrencias = [];
+$ocRes = mysqli_query($ligacao,
+  "SELECT o.id, o.codigo, o.titulo, o.gravidade, v.matricula
+   FROM ocorrencias o
+   LEFT JOIN viaturas v ON v.id = o.viatura_id
+   WHERE o.gravidade IN ('alta','critica') AND o.estado IN ('aberta','em_analise')
+   ORDER BY o.criado_em DESC LIMIT 5"
+);
+if ($ocRes) while ($row = mysqli_fetch_assoc($ocRes)) $alertasOcorrencias[] = $row;
+
 function badgeEstadoDashboard($estado) {
   $estado = trim((string)$estado);
   if ($estado === 'Disponível')    return '<span class="badge-pill badge-success-soft">Ativo</span>';
@@ -139,6 +150,31 @@ function badgeEstadoDashboard($estado) {
           <span class="text-muted"><?php echo h($a['carta_validade']); ?></span>
           <span class="badge-pill <?php echo $cor; ?>"><?php echo $txt; ?></span>
         </div>
+      </div>
+    <?php endforeach; ?>
+  </div>
+</div>
+<?php endif; ?>
+
+<?php if (count($alertasOcorrencias) > 0): ?>
+<!-- Faixa de alertas de ocorrências críticas -->
+<div class="glass-card p-3 mb-4" style="border-left: 3px solid hsl(0, 72%, 51%);">
+  <div class="d-flex align-items-center gap-2 mb-2">
+    <i class="bi bi-exclamation-octagon-fill text-danger"></i>
+    <strong class="small text-danger">Ocorrências Críticas / Altas Ativas</strong>
+  </div>
+  <div class="vstack gap-2">
+    <?php foreach ($alertasOcorrencias as $oc): ?>
+      <div class="d-flex align-items-center justify-content-between gap-2 small">
+        <div>
+          <a href="ocorrencias/show.php?id=<?php echo (int)$oc['id']; ?>" class="fw-semibold text-danger text-decoration-none">
+            <?php echo h($oc['codigo'] . " - " . $oc['titulo']); ?>
+          </a>
+          <span class="text-muted ms-2">Viatura: <?php echo h($oc['matricula'] ?? 'Sem Viatura'); ?></span>
+        </div>
+        <span class="badge-pill bg-danger bg-opacity-25 text-danger border border-danger border-opacity-25 text-uppercase" style="font-size: 10px; padding: 2px 6px;">
+          <?php echo h($oc['gravidade']); ?>
+        </span>
       </div>
     <?php endforeach; ?>
   </div>

@@ -15,10 +15,7 @@ $status = 'Ativo';
 $viagens = 0;
 $viatura_id = '';
 
-// lista viaturas p/ select
-$viaturas = [];
-$rV = mysqli_query($ligacao, "SELECT id, matricula, marca_modelo FROM viaturas ORDER BY matricula ASC");
-if ($rV) while ($row = mysqli_fetch_assoc($rV)) $viaturas[] = $row;
+// lista viaturas p/ select - REMOVIDO pois a atribuição agora é feita pelo módulo de Atribuições
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $nome           = trim($_POST['nome'] ?? '');
@@ -32,7 +29,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $status         = ($_POST['status'] ?? 'Ativo') === 'Inativo' ? 'Inativo' : 'Ativo';
   $desde          = $_POST['desde'] ?? '';
   $viagens        = max(0, (int)($_POST['viagens'] ?? 0));
-  $viatura_id     = $_POST['viatura_id'] ?? '';
 
   if ($nome === '') $erros[] = "O nome é obrigatório.";
   if ($nif !== '' && !preg_match('/^\d{9}$/', preg_replace('/\D/', '', $nif)))
@@ -42,30 +38,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
   $carta_validade_db = ($carta_validade !== '') ? $carta_validade : null;
   $desde_db          = ($desde !== '') ? $desde : null;
-  $viatura_id_int    = ($viatura_id !== '' && (int)$viatura_id > 0) ? (int)$viatura_id : null;
 
   if (count($erros) === 0) {
-    if ($viatura_id_int === null) {
-      $stmt = mysqli_prepare($ligacao,
-        "INSERT INTO motoristas (nome, cc, nif, carta_numero, carta_categoria, carta_validade,
-           telefone, email, status, desde, viagens, viatura_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)"
-      );
-      mysqli_stmt_bind_param($stmt, "sssssssssi",
-        $nome, $cc, $nif, $carta_numero, $carta_categoria, $carta_validade_db,
-        $telefone, $email, $status, $desde_db, $viagens
-      );
-    } else {
-      $stmt = mysqli_prepare($ligacao,
-        "INSERT INTO motoristas (nome, cc, nif, carta_numero, carta_categoria, carta_validade,
-           telefone, email, status, desde, viagens, viatura_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-      );
-      mysqli_stmt_bind_param($stmt, "sssssssssii",
-        $nome, $cc, $nif, $carta_numero, $carta_categoria, $carta_validade_db,
-        $telefone, $email, $status, $desde_db, $viagens, $viatura_id_int
-      );
-    }
+    $stmt = mysqli_prepare($ligacao,
+      "INSERT INTO motoristas (nome, cc, nif, carta_numero, carta_categoria, carta_validade,
+         telefone, email, status, desde, viagens, viatura_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)"
+    );
+    mysqli_stmt_bind_param($stmt, "sssssssssi",
+      $nome, $cc, $nif, $carta_numero, $carta_categoria, $carta_validade_db,
+      $telefone, $email, $status, $desde_db, $viagens
+    );
 
     if (mysqli_stmt_execute($stmt)) {
       header("Location: index.php?msg=criado");
@@ -154,16 +137,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </select>
       </div>
 
-      <div class="col-12 col-md-6">
-        <label class="form-label form-label-soft">Viatura atribuída</label>
-        <select class="form-select" name="viatura_id">
-          <option value="">Sem viatura</option>
-          <?php foreach ($viaturas as $v): ?>
-            <option value="<?php echo (int)$v['id']; ?>" <?php echo ((string)$viatura_id === (string)$v['id'])?'selected':''; ?>>
-              <?php echo h($v['matricula'] . " — " . $v['marca_modelo']); ?>
-            </option>
-          <?php endforeach; ?>
-        </select>
+      <div class="col-12 col-md-6 d-flex align-items-center">
+        <div class="alert alert-info w-100 mb-0 small py-2 px-3">
+          <i class="bi bi-info-circle me-1"></i> A atribuição de viatura é gerida no módulo <a href="../atribuicoes/index.php" class="alert-link fw-semibold">Atribuições</a>.
+        </div>
       </div>
 
       <div class="col-12 col-md-6">

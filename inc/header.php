@@ -66,6 +66,11 @@ if ($nomeUser) {
         <span>As minhas ocorrências</span>
       </a>
 
+      <a class="nav-link <?php echo ($active==='operario_ordens') ? 'active' : ''; ?>" href="<?php echo $BASE_URL; ?>/operario/ordens.php">
+        <span class="nav-ico"><i class="bi bi-clipboard2-check"></i></span>
+        <span>As minhas tarefas</span>
+      </a>
+
       <a class="nav-link <?php echo ($active==='mapa_frota') ? 'active' : ''; ?>" href="<?php echo $BASE_URL; ?>/mapa-frota/index.php">
         <span class="nav-ico"><i class="bi bi-map-fill"></i></span>
         <span>Mapa da Frota</span>
@@ -114,9 +119,19 @@ if ($nomeUser) {
         <span>Motoristas</span>
       </a>
 
+      <a class="nav-link <?php echo ($active==='atribuicoes') ? 'active' : ''; ?>" href="<?php echo $BASE_URL; ?>/atribuicoes/index.php">
+        <span class="nav-ico"><i class="bi bi-link-45deg"></i></span>
+        <span>Atribuições</span>
+      </a>
+
       <a class="nav-link <?php echo ($active==='ocorrencias') ? 'active' : ''; ?>" href="<?php echo $BASE_URL; ?>/ocorrencias/index.php">
         <span class="nav-ico"><i class="bi bi-exclamation-triangle-fill"></i></span>
         <span>Ocorrências</span>
+      </a>
+
+      <a class="nav-link <?php echo ($active==='ordens_servico') ? 'active' : ''; ?>" href="<?php echo $BASE_URL; ?>/ordens/index.php">
+        <span class="nav-ico"><i class="bi bi-clipboard2-check"></i></span>
+        <span>Ordens de Serviço</span>
       </a>
 
       <a class="nav-link <?php echo ($active==='config') ? 'active' : ''; ?>" href="<?php echo $BASE_URL; ?>/configuracoes/index.php">

@@ -35,8 +35,6 @@ $email = $m['email'] ?? '';
 $status = $m['status'] ?? 'Ativo';
 $desde = $m['desde'] ?? '';
 $viagens = (string)($m['viagens'] ?? '0');
-$viatura_id = $m['viatura_id'] ?? '';
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $nome = trim($_POST['nome'] ?? '');
   $cc = trim($_POST['cc'] ?? '');
@@ -50,13 +48,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $desde = $_POST['desde'] ?? null;
   $viagens_int = (int)($_POST['viagens'] ?? 0);
   if ($viagens_int < 0) $viagens_int = 0;
-
-  $viatura_id = $_POST['viatura_id'] ?? '';
-  $viatura_id_int = null;
-  if ($viatura_id !== '') {
-    $viatura_id_int = (int)$viatura_id;
-    if ($viatura_id_int <= 0) $viatura_id_int = null;
-  }
 
   if ($nome === '') $erros[] = "O nome é obrigatório.";
 
@@ -72,35 +63,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $desde_db = ($desde !== '') ? $desde : null;
 
   if (count($erros) === 0) {
-    if ($viatura_id_int === null) {
-      $stmt = mysqli_prepare(
-        $ligacao,
-        "UPDATE motoristas
-          SET nome=?, cc=?, nif=?, carta_numero=?, carta_categoria=?, carta_validade=?,
-              telefone=?, email=?, status=?, desde=?, viagens=?, viatura_id=NULL
-          WHERE id=?"
-      );
-      mysqli_stmt_bind_param(
-        $stmt,
-        "ssssssssssii",
-        $nome,$cc,$nif,$carta_numero,$carta_categoria,$carta_validade_db,
-        $telefone,$email,$status,$desde_db,$viagens_int,$id
-      );
-    } else {
-      $stmt = mysqli_prepare(
-        $ligacao,
-        "UPDATE motoristas
-          SET nome=?, cc=?, nif=?, carta_numero=?, carta_categoria=?, carta_validade=?,
-              telefone=?, email=?, status=?, desde=?, viagens=?, viatura_id=?
-          WHERE id=?"
-      );
-      mysqli_stmt_bind_param(
-        $stmt,
-        "ssssssssssiii",
-        $nome,$cc,$nif,$carta_numero,$carta_categoria,$carta_validade_db,
-        $telefone,$email,$status,$desde_db,$viagens_int,$viatura_id_int,$id
-      );
-    }
+    $stmt = mysqli_prepare(
+      $ligacao,
+      "UPDATE motoristas
+        SET nome=?, cc=?, nif=?, carta_numero=?, carta_categoria=?, carta_validade=?,
+            telefone=?, email=?, status=?, desde=?, viagens=?
+        WHERE id=?"
+    );
+    mysqli_stmt_bind_param(
+      $stmt,
+      "ssssssssssii",
+      $nome,$cc,$nif,$carta_numero,$carta_categoria,$carta_validade_db,
+      $telefone,$email,$status,$desde_db,$viagens_int,$id
+    );
 
     $ok = mysqli_stmt_execute($stmt);
     if ($ok) {
@@ -112,11 +87,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     mysqli_stmt_close($stmt);
   }
 }
-
-// lista viaturas p/ select
-$viaturas = [];
-$rV = mysqli_query($ligacao, "SELECT id, matricula, marca_modelo FROM viaturas ORDER BY matricula ASC");
-if ($rV) while ($row = mysqli_fetch_assoc($rV)) $viaturas[] = $row;
 ?>
 
 <div class="page-max-6xl space-y-6">
@@ -199,16 +169,10 @@ if ($rV) while ($row = mysqli_fetch_assoc($rV)) $viaturas[] = $row;
         </select>
       </div>
 
-      <div class="col-12 col-md-6">
-        <label class="form-label form-label-soft">Viatura atribuída</label>
-        <select class="form-select" name="viatura_id">
-          <option value="">Sem viatura</option>
-          <?php foreach ($viaturas as $v): ?>
-            <option value="<?php echo (int)$v['id']; ?>" <?php echo ((string)$viatura_id === (string)$v['id'])?'selected':''; ?>>
-              <?php echo h($v['matricula'] . " — " . $v['marca_modelo']); ?>
-            </option>
-          <?php endforeach; ?>
-        </select>
+      <div class="col-12 col-md-6 d-flex align-items-center">
+        <div class="alert alert-info w-100 mb-0 small py-2 px-3">
+          <i class="bi bi-info-circle me-1"></i> A atribuição de viatura é gerida no módulo <a href="../atribuicoes/index.php" class="alert-link fw-semibold">Atribuições</a>.
+        </div>
       </div>
 
       <div class="col-12 col-md-6">
