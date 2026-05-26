@@ -58,7 +58,7 @@ $fuelData = [];
 for ($i = 5; $i >= 0; $i--) {
   $mes = date('Y-m', strtotime("-$i months"));
   $label = strftime('%b', strtotime("-$i months"));
-  // fallback se strftime não tiver locale
+
   $meses_pt = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   $label = $meses_pt[(int)date('m', strtotime("-$i months")) - 1];
 

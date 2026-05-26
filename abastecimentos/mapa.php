@@ -6,7 +6,9 @@ $active = 'mapa_abastecimentos';
 require_once __DIR__ . "/../inc/database.php";
 require_once __DIR__ . "/../inc/header.php";
 
-function h($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
+function h(string|null $s): string {
+  return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
+}
 
 $filtro_abastecimentos = "";
 if (perfil_atual() === 'gestor' && infraestrutura_id_sessao() !== null) {

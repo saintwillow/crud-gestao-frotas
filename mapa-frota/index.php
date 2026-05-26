@@ -42,8 +42,7 @@ $infraestrutura_id = isset($_GET['infraestrutura_id']) && ctype_digit((string)$_
   : 0;
 
 if (perfil_atual() === 'gestor' && infraestrutura_id_sessao() !== null) {
-  $infra_id = (int)infraestrutura_id_sessao();
-  $infraestrutura_id = $infra_id;
+  $infraestrutura_id = (int)infraestrutura_id_sessao();
 }
 
 $filtro_infra = "";
@@ -164,11 +163,11 @@ $sql_viaturas = "
     i.longitude AS infra_lng,
     os.id AS os_id,
     os.estado AS os_estado,
-    so.codigo AS servico_nome,
-    i.id AS orig_id,
-    i.nome AS orig_nome,
-    i.latitude AS orig_lat,
-    i.longitude AS orig_lng,
+    so.nome_servico AS servico_nome,
+    orig.id AS orig_id,
+    orig.nome AS orig_nome,
+    orig.latitude AS orig_lat,
+    orig.longitude AS orig_lng,
     dest.id AS dest_id,
     dest.nome AS dest_nome,
     dest.latitude AS dest_lat,
@@ -176,9 +175,10 @@ $sql_viaturas = "
   FROM viaturas v
   LEFT JOIN infraestruturas i ON v.infraestrutura_id = i.id
   LEFT JOIN ordens_servico os ON os.viatura_id = v.id AND os.estado IN ('em_deslocacao', 'em_execucao')
-  LEFT JOIN servicos_operacionais so ON so.viatura_id = v.id AND so.estado = 'aberto'
-  LEFT JOIN infraestruturas dest ON os.infraestrutura_id = dest.id
-  WHERE 1=1 {$filtro_viaturas}
+  LEFT JOIN servicos_operacionais so ON os.servico_id = so.id
+  LEFT JOIN infraestruturas orig ON so.origem_id = orig.id
+  LEFT JOIN infraestruturas dest ON so.destino_id = dest.id
+  WHERE v.ativo = 1 {$filtro_viaturas}
 ";
 
 $resAllV = mysqli_query($ligacao, $sql_viaturas);
@@ -687,19 +687,18 @@ if ($infraestrutura_id > 0) {
 
   // Helper to color code vehicles
   function getVehicleColor(estado, osEstado) {
-    if (estado === 'Inativo') return '#64748b'; // Cinzento
-    if (estado === 'Em Manutenção') return '#f59e0b'; // Laranja
-    if (estado === 'Disponível') return '#10b981'; // Verde
+    if (estado === 'Inativo') return '#64748b';
+    if (estado === 'Em Manutenção') return '#f59e0b';
+    if (estado === 'Disponível') return '#10b981';
     if (estado === 'Atribuída') {
-      if (osEstado === 'em_deslocacao' || osEstado === 'em_execucao') return '#d946ef'; // Fuchsia (Deslocação)
-      return '#3b82f6'; // Azul
+      if (osEstado === 'em_deslocacao' || osEstado === 'em_execucao') return '#d946ef';
+      return '#3b82f6';
     }
     return '#cbd5e1';
   }
 
   // 2. Draw Viaturas (Vehicles) and routes
   viaturasMapa.forEach((v) => {
-    // Determine vehicle position
     let activeLat = v.infra_lat;
     let activeLng = v.infra_lng;
     const inDuty = v.os_estado === 'em_deslocacao' || v.os_estado === 'em_execucao';
@@ -711,7 +710,6 @@ if ($infraestrutura_id > 0) {
 
     if (activeLat === null || activeLng === null) return;
 
-    // Apply coordinate jittering to prevent overlaps on the same base
     const jitterLat = (Math.random() - 0.5) * 0.0018;
     const jitterLng = (Math.random() - 0.5) * 0.0018;
     const finalLat = activeLat + jitterLat;
@@ -728,7 +726,6 @@ if ($infraestrutura_id > 0) {
       className: inDuty ? 'glow-marker' : ''
     }).addTo(map);
 
-    // Draw route line if in execution
     if (inDuty && v.orig_lat && v.orig_lng && v.dest_lat && v.dest_lng) {
       L.polyline([[v.orig_lat, v.orig_lng], [v.dest_lat, v.dest_lng]], {
         color: '#d946ef',

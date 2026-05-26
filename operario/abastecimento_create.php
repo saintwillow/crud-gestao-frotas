@@ -59,7 +59,7 @@ if (!$atribuicao) {
 $viatura_id = (int)$atribuicao['viatura_id'];
 
 /*
-  O abastecimento do operário deve estar associado a um serviço aberto.
+  O abastecimento do operário pode estar associado a um serviço aberto.
 */
 $servicoAberto = null;
 
@@ -78,9 +78,7 @@ $servicoAberto = $resServ ? mysqli_fetch_assoc($resServ) : null;
 mysqli_stmt_close($stmt);
 
 // Não é obrigatório ter uma jornada de serviço aberta para registar um abastecimento
-
-
-$servico_id = (int)$servicoAberto['id'];
+$servico_id = $servicoAberto ? (int)$servicoAberto['id'] : null;
 
 $erros = [];
 
@@ -112,6 +110,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   if ($preco_litro === '' || !is_numeric($preco_litro) || (float)$preco_litro <= 0) {
     $erros[] = "Informe o preço por litro com valor maior que 0.";
   }
+
   $km_atual_int = null;
 
   if ($km_atual !== '') {
@@ -122,9 +121,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $km_minimo = $servicoAberto ? (int)$servicoAberto['km_inicio'] : (int)$atribuicao['quilometragem'];
       $km_viatura = (int)$atribuicao['quilometragem'];
 
-      if ($servicoAberto && $km_atual_int < $km_minimo) {
-        $erros[] = "A quilometragem do abastecimento não pode ser menor que a quilometragem inicial do serviço ({$km_minimo} km).";
+      if ($km_atual_int < $km_minimo) {
+        $erros[] = "A quilometragem do abastecimento não pode ser menor que a quilometragem mínima ({$km_minimo} km).";
       }
+
       if ($km_atual_int < $km_viatura) {
         $erros[] = "A quilometragem do abastecimento não pode ser menor que a quilometragem atual da viatura ({$km_viatura} km).";
       }
@@ -153,6 +153,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
   // Processamento de Comprovativo
   $comprovativo_db = null;
+
   if (isset($_FILES['comprovativo']) && $_FILES['comprovativo']['error'] === UPLOAD_ERR_OK) {
     $fileTmpPath = $_FILES['comprovativo']['tmp_name'];
     $fileName = $_FILES['comprovativo']['name'];
@@ -161,14 +162,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $fileExtension = strtolower(end($fileNameCmps));
 
     $allowedExtensions = ['jpg', 'jpeg', 'png', 'pdf'];
+
     if (in_array($fileExtension, $allowedExtensions)) {
-      if ($fileSize <= 5242880) { // 5MB max
+      if ($fileSize <= 5242880) {
         $newFileName = md5(time() . $fileName) . '.' . $fileExtension;
         $uploadFileDir = __DIR__ . '/../img/uploads/comprovativos/';
+
         if (!is_dir($uploadFileDir)) {
           mkdir($uploadFileDir, 0755, true);
         }
+
         $dest_path = $uploadFileDir . $newFileName;
+
         if (move_uploaded_file($fileTmpPath, $dest_path)) {
           $comprovativo_db = 'img/uploads/comprovativos/' . $newFileName;
         } else {
@@ -224,7 +229,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       mysqli_stmt_bind_param(
         $stmt,
-        "iiiiissdddidsssds",
+        "iiiiissdddisssdds",
         $viatura_id,
         $colaborador_id,
         $motorista_id,
@@ -307,6 +312,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <div class="page-subtitle">
       Viatura:
       <strong><?php echo h($atribuicao['matricula'] . ' — ' . $atribuicao['marca_modelo']); ?></strong>
+
       <?php if ($servicoAberto): ?>
         <span class="text-muted">
           · Serviço <?php echo h($servicoAberto['codigo']); ?>
@@ -325,6 +331,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       </ul>
     </div>
   <?php endif; ?>
+
   <div class="glass-card p-4">
     <form method="post" enctype="multipart/form-data" class="row g-3">
 
