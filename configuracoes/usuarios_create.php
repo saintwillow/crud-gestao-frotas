@@ -13,6 +13,7 @@ $nome = $username = '';
 $perfil = 'operario';
 $ativo = 1;
 $motorista_id_sel = '';
+$infraestrutura_id_sel = '';
 
 // Lista de motoristas sem utilizador associado (ou nenhum)
 $motoristas_disp = [];
@@ -35,13 +36,19 @@ $resM = mysqli_query($ligacao,
 );
 if ($resM) while ($r = mysqli_fetch_assoc($resM)) $motoristas[] = $r;
 
+// Carregar todas as infraestruturas ativas para o select de gestores
+$infraestruturas = [];
+$resI = mysqli_query($ligacao, "SELECT id, nome, tipo FROM infraestruturas WHERE ativo = 1 ORDER BY nome ASC");
+if ($resI) while ($r = mysqli_fetch_assoc($resI)) $infraestruturas[] = $r;
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-  $nome         = trim($_POST['nome'] ?? '');
-  $username     = trim($_POST['username'] ?? '');
-  $senha        = (string)($_POST['senha'] ?? '');
-  $perfil       = strtolower(trim($_POST['perfil'] ?? 'operario'));
-  $ativo        = isset($_POST['ativo']) ? 1 : 0;
-  $motorista_id = trim($_POST['motorista_id'] ?? '');
+  $nome             = trim($_POST['nome'] ?? '');
+  $username         = trim($_POST['username'] ?? '');
+  $senha            = (string)($_POST['senha'] ?? '');
+  $perfil           = strtolower(trim($_POST['perfil'] ?? 'operario'));
+  $ativo            = isset($_POST['ativo']) ? 1 : 0;
+  $motorista_id     = trim($_POST['motorista_id'] ?? '');
+  $infraestrutura_id = trim($_POST['infraestrutura_id'] ?? '');
 
   if ($nome === '' || $username === '' || $senha === '') {
     $erro = 'Preencha nome, username e senha.';
@@ -62,11 +69,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
       $hash   = password_hash($senha, PASSWORD_BCRYPT);
       $mid    = ($motorista_id !== '' && (int)$motorista_id > 0) ? (int)$motorista_id : null;
+      $infra_val = ($infraestrutura_id !== '' && (int)$infraestrutura_id > 0) ? (int)$infraestrutura_id : null;
 
       $ins = mysqli_prepare($ligacao,
-        "INSERT INTO usuarios (nome, username, senha, perfil, ativo, motorista_id) VALUES (?, ?, ?, ?, ?, ?)"
+        "INSERT INTO usuarios (nome, username, senha, perfil, ativo, motorista_id, infraestrutura_id) VALUES (?, ?, ?, ?, ?, ?, ?)"
       );
-      mysqli_stmt_bind_param($ins, "ssssii", $nome, $username, $hash, $perfil, $ativo, $mid);
+      mysqli_stmt_bind_param($ins, "ssssiii", $nome, $username, $hash, $perfil, $ativo, $mid, $infra_val);
 
       if (mysqli_stmt_execute($ins)) {
         header("Location: usuarios.php?ok=1");
@@ -141,24 +149,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <?php if (empty($motoristas)): ?>
           <div class="form-text text-warning">Não há motoristas ativos disponíveis para associar.</div>
         <?php else: ?>
-          <div class="form-text">Associa o utilizador ao motorista correspondente para que veja os seus próprios dados.</div>
+          <div class="form-text">Associe o utilizador ao motorista correspondente para que veja os seus próprios dados.</div>
         <?php endif; ?>
       </div>
 
-      <?php if ($perfil === 'operario' || true): ?>
-      <div class="col-12">
-        <label class="form-label">Motorista associado <span class="text-muted">(obrigatório para operários)</span></label>
-        <select class="form-select" name="motorista_id">
-          <option value="">Sem associação</option>
-          <?php foreach ($motoristas_disp as $mt): ?>
-            <option value="<?php echo (int)$mt['id']; ?>" <?php echo ((string)$motorista_id_sel===(string)$mt['id'])?'selected':''; ?>>
-              <?php echo h($mt['nome']); ?>
+      <!-- Associação a base operacional — só relevante para gestor -->
+      <div class="col-12" id="blocoBase">
+        <label class="form-label">Base Operacional Associada <span class="text-muted">(Opcional - deixar vazio para Gestor Global)</span></label>
+        <select class="form-select" name="infraestrutura_id">
+          <option value="">Sem associação (Gestor Global)</option>
+          <?php foreach ($infraestruturas as $infra): ?>
+            <option value="<?php echo (int)$infra['id']; ?>" <?php echo ($infraestrutura_id_sel===(string)$infra['id'] || $infraestrutura_id_sel===(int)$infra['id'])?'selected':''; ?>>
+              <?php echo h($infra['nome'] . ' (' . ucfirst($infra['tipo']) . ')'); ?>
             </option>
           <?php endforeach; ?>
         </select>
-        <div class="form-text">Associe ao motorista correspondente na base de dados.</div>
+        <div class="form-text">Restringe o acesso deste gestor apenas às viaturas e abastecimentos associados a esta base operacional.</div>
       </div>
-      <?php endif; ?>
 
       <div class="col-12 d-flex gap-2">
         <button class="btn btn-primary" type="submit">Salvar</button>
@@ -171,12 +178,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <script>
   const sel = document.getElementById('selectPerfil');
-  const bloco = document.getElementById('blocoMotorista');
-  function toggleMotorista() {
-    bloco.style.display = sel.value === 'operario' ? '' : 'none';
+  const blocoMotorista = document.getElementById('blocoMotorista');
+  const blocoBase = document.getElementById('blocoBase');
+  function toggleCamposPerfil() {
+    blocoMotorista.style.display = sel.value === 'operario' ? '' : 'none';
+    blocoBase.style.display = sel.value === 'gestor' ? '' : 'none';
   }
-  sel.addEventListener('change', toggleMotorista);
-  toggleMotorista();
+  sel.addEventListener('change', toggleCamposPerfil);
+  toggleCamposPerfil();
 </script>
 
 <?php

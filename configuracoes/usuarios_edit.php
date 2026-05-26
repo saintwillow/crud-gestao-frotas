@@ -17,7 +17,7 @@ if ($id <= 0) {
 
 $erro = '';
 
-$stmt = mysqli_prepare($ligacao, "SELECT id, nome, username, perfil, ativo, motorista_id FROM usuarios WHERE id=? LIMIT 1");
+$stmt = mysqli_prepare($ligacao, "SELECT id, nome, username, perfil, ativo, motorista_id, infraestrutura_id FROM usuarios WHERE id=? LIMIT 1");
 mysqli_stmt_bind_param($stmt, "i", $id);
 mysqli_stmt_execute($stmt);
 $res = mysqli_stmt_get_result($stmt);
@@ -35,6 +35,7 @@ $username = $u['username'];
 $perfil   = strtolower(trim($u['perfil']));
 $ativo    = (int)$u['ativo'];
 $motorista_id_sel = $u['motorista_id'] ?? '';
+$infraestrutura_id_sel = $u['infraestrutura_id'] ?? '';
 
 // Motoristas disponíveis: sem utilizador OU o que já está associado a este user
 $motoristas_disp = [];
@@ -51,6 +52,11 @@ $rMotRes = mysqli_stmt_get_result($rMot);
 if ($rMotRes) while ($r = mysqli_fetch_assoc($rMotRes)) $motoristas_disp[] = $r;
 mysqli_stmt_close($rMot);
 
+// Carregar todas as infraestruturas ativas para o select de gestores
+$infraestruturas = [];
+$resI = mysqli_query($ligacao, "SELECT id, nome, tipo FROM infraestruturas WHERE ativo = 1 ORDER BY nome ASC");
+if ($resI) while ($r = mysqli_fetch_assoc($resI)) $infraestruturas[] = $r;
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $nome      = trim($_POST['nome'] ?? '');
   $username  = trim($_POST['username'] ?? '');
@@ -58,6 +64,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $ativo     = isset($_POST['ativo']) ? 1 : 0;
   $novaSenha = (string)($_POST['senha'] ?? '');
   $motorista_id_sel = trim($_POST['motorista_id'] ?? '');
+  $infraestrutura_id_sel = trim($_POST['infraestrutura_id'] ?? '');
 
   if ($nome === '' || $username === '') {
     $erro = 'Preencha nome e username.';
@@ -77,17 +84,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $erro = 'Já existe outro utilizador com esse username.';
     } else {
       $mid_val = ($motorista_id_sel !== '' && (int)$motorista_id_sel > 0) ? (int)$motorista_id_sel : null;
+      $infra_val = ($infraestrutura_id_sel !== '' && (int)$infraestrutura_id_sel > 0) ? (int)$infraestrutura_id_sel : null;
+      
       if ($novaSenha !== '') {
         $novoHash = password_hash($novaSenha, PASSWORD_BCRYPT);
         $upd = mysqli_prepare($ligacao,
-          "UPDATE usuarios SET nome=?, username=?, perfil=?, ativo=?, senha=?, motorista_id=? WHERE id=? LIMIT 1"
+          "UPDATE usuarios SET nome=?, username=?, perfil=?, ativo=?, senha=?, motorista_id=?, infraestrutura_id=? WHERE id=? LIMIT 1"
         );
-        mysqli_stmt_bind_param($upd, "sssisii", $nome, $username, $perfil, $ativo, $novoHash, $mid_val, $id);
+        mysqli_stmt_bind_param($upd, "sssisiii", $nome, $username, $perfil, $ativo, $novoHash, $mid_val, $infra_val, $id);
       } else {
         $upd = mysqli_prepare($ligacao,
-          "UPDATE usuarios SET nome=?, username=?, perfil=?, ativo=?, motorista_id=? WHERE id=? LIMIT 1"
+          "UPDATE usuarios SET nome=?, username=?, perfil=?, ativo=?, motorista_id=?, infraestrutura_id=? WHERE id=? LIMIT 1"
         );
-        mysqli_stmt_bind_param($upd, "ssssii", $nome, $username, $perfil, $ativo, $mid_val, $id);
+        mysqli_stmt_bind_param($upd, "sssisiii", $nome, $username, $perfil, $ativo, $mid_val, $infra_val, $id);
       }
 
       if (mysqli_stmt_execute($upd)) {
@@ -134,7 +143,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       <div class="col-12 col-md-3">
         <label class="form-label">Perfil</label>
-        <select class="form-select" name="perfil">
+        <select class="form-select" name="perfil" id="selectPerfil">
           <option value="operario" <?php echo $perfil==='operario'?'selected':''; ?>>Operário</option>
           <option value="gestor"   <?php echo $perfil==='gestor'?'selected':''; ?>>Gestor</option>
           <option value="admin"    <?php echo $perfil==='admin'?'selected':''; ?>>Admin</option>
@@ -148,7 +157,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
       </div>
 
-      <div class="col-12">
+      <div class="col-12" id="blocoMotorista">
         <label class="form-label">Motorista associado <span class="text-muted">(obrigatório para operários)</span></label>
         <select class="form-select" name="motorista_id">
           <option value="">Sem associação</option>
@@ -161,6 +170,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="form-text">Associe ao motorista correspondente na base de dados.</div>
       </div>
 
+      <!-- Associação a base operacional — só relevante para gestor -->
+      <div class="col-12" id="blocoBase">
+        <label class="form-label">Base Operacional Associada <span class="text-muted">(Opcional - deixar vazio para Gestor Global)</span></label>
+        <select class="form-select" name="infraestrutura_id">
+          <option value="">Sem associação (Gestor Global)</option>
+          <?php foreach ($infraestruturas as $infra): ?>
+            <option value="<?php echo (int)$infra['id']; ?>" <?php echo ($infraestrutura_id_sel===(string)$infra['id'] || $infraestrutura_id_sel===(int)$infra['id'])?'selected':''; ?>>
+              <?php echo h($infra['nome'] . ' (' . ucfirst($infra['tipo']) . ')'); ?>
+            </option>
+          <?php endforeach; ?>
+        </select>
+        <div class="form-text">Restringe o acesso deste gestor apenas às viaturas e abastecimentos associados a esta base operacional.</div>
+      </div>
+
       <div class="col-12 d-flex gap-2">
         <button class="btn btn-primary" type="submit">Salvar</button>
         <a class="btn btn-outline-secondary" href="usuarios.php">Cancelar</a>
@@ -168,6 +191,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </form>
   </div>
 </div>
+
+<script>
+  const sel = document.getElementById('selectPerfil');
+  const blocoMotorista = document.getElementById('blocoMotorista');
+  const blocoBase = document.getElementById('blocoBase');
+  function toggleCamposPerfil() {
+    blocoMotorista.style.display = sel.value === 'operario' ? '' : 'none';
+    blocoBase.style.display = sel.value === 'gestor' ? '' : 'none';
+  }
+  sel.addEventListener('change', toggleCamposPerfil);
+  toggleCamposPerfil();
+</script>
 
 <?php
 mysqli_close($ligacao);

@@ -86,6 +86,19 @@ function viatura_id_sessao(): ?int {
   return $vid !== null ? (int)$vid : null;
 }
 
+function infraestrutura_id_sessao(): ?int {
+  $infra_id = $_SESSION['user_infraestrutura_id'] ?? null;
+  return $infra_id !== null ? (int)$infra_id : null;
+}
+
+function sql_filtro_viatura_gestor(string $prefix = 'v'): string {
+  if (perfil_atual() === 'gestor' && infraestrutura_id_sessao() !== null) {
+    $id = (int)infraestrutura_id_sessao();
+    return " AND {$prefix}.infraestrutura_id = {$id}";
+  }
+  return "";
+}
+
 /*
   Nova função central:
   retorna a atribuição aberta do motorista logado.
@@ -132,7 +145,8 @@ function login(mysqli $ligacao, string $username, string $senha): bool {
         u.perfil,
         u.senha,
         u.motorista_id,
-        u.colaborador_id
+        u.colaborador_id,
+        u.infraestrutura_id
      FROM usuarios u
      WHERE u.username = ?
        AND u.ativo = 1
@@ -171,6 +185,7 @@ function login(mysqli $ligacao, string $username, string $senha): bool {
   $_SESSION['user_perfil']         = $user['perfil'];
   $_SESSION['user_motorista_id']   = $user['motorista_id'] !== null ? (int)$user['motorista_id'] : null;
   $_SESSION['user_colaborador_id'] = $user['colaborador_id'] !== null ? (int)$user['colaborador_id'] : null;
+  $_SESSION['user_infraestrutura_id'] = $user['infraestrutura_id'] !== null ? (int)$user['infraestrutura_id'] : null;
 
   /*
     Compatibilidade:
@@ -208,4 +223,21 @@ function logout(): void {
   session_destroy();
   header("Location: " . base_url() . "/login.php");
   exit;
+}
+
+function get_configuracoes_sistema(): array {
+  $file = __DIR__ . '/../configuracoes/settings.json';
+  $defaults = [
+    'nome_empresa' => 'AquaFleet Gestão de Frotas',
+    'moeda' => '€',
+    'alerta_carta_dias' => 60,
+    'mapa_estilo' => 'dark'
+  ];
+  if (file_exists($file)) {
+    $json = json_decode(file_get_contents($file), true);
+    if (is_array($json)) {
+      return array_merge($defaults, $json);
+    }
+  }
+  return $defaults;
 }

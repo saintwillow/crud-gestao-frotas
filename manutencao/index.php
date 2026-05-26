@@ -87,16 +87,6 @@ if ($res) while ($row = mysqli_fetch_assoc($res)) $rows[] = $row;
     </div>
 
     <div class="d-flex align-items-center gap-2 flex-wrap">
-      <?php if (isset($_GET['msg'])): ?>
-        <?php if ($_GET['msg'] === 'criada'): ?>
-          <div class="alert alert-success py-2 px-3 mb-0">Manutenção criada </div>
-        <?php elseif ($_GET['msg'] === 'editada'): ?>
-          <div class="alert alert-success py-2 px-3 mb-0">Manutenção atualizada </div>
-        <?php elseif ($_GET['msg'] === 'apagada'): ?>
-          <div class="alert alert-success py-2 px-3 mb-0">Manutenção apagada </div>
-        <?php endif; ?>
-      <?php endif; ?>
-
       <?php if (in_array(perfil_atual(), ['admin', 'gestor'], true)): ?>
         <a href="create.php" class="btn btn-primary">Nova Manutenção</a>
       <?php endif; ?>

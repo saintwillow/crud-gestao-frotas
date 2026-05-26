@@ -77,33 +77,8 @@ $resServ = mysqli_stmt_get_result($stmt);
 $servicoAberto = $resServ ? mysqli_fetch_assoc($resServ) : null;
 mysqli_stmt_close($stmt);
 
-if (!$servicoAberto) {
-  ?>
-  <div class="page-max-4xl space-y-6">
-    <a class="back-link" href="abastecimentos.php">← Voltar aos meus abastecimentos</a>
+// Não é obrigatório ter uma jornada de serviço aberta para registar um abastecimento
 
-    <div>
-      <h1 class="page-title">Novo Abastecimento</h1>
-      <div class="page-subtitle">
-        Viatura:
-        <strong><?php echo h($atribuicao['matricula'] . ' — ' . $atribuicao['marca_modelo']); ?></strong>
-      </div>
-    </div>
-
-    <div class="glass-card p-4 text-center">
-      <i class="bi bi-clock-history fs-1 mb-3" style="color:hsl(38,92%,50%);"></i>
-      <h2 class="h5 fw-bold mb-2">Serviço ainda não iniciado</h2>
-      <p class="text-muted mb-4">
-        Para registar um abastecimento, primeiro inicie o serviço operacional.
-      </p>
-      <a href="servico.php" class="btn btn-primary">Iniciar serviço</a>
-    </div>
-  </div>
-  <?php
-  mysqli_close($ligacao);
-  require_once __DIR__ . "/../inc/footer.php";
-  exit;
-}
 
 $servico_id = (int)$servicoAberto['id'];
 
@@ -137,7 +112,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   if ($preco_litro === '' || !is_numeric($preco_litro) || (float)$preco_litro <= 0) {
     $erros[] = "Informe o preço por litro com valor maior que 0.";
   }
-
   $km_atual_int = null;
 
   if ($km_atual !== '') {
@@ -145,10 +119,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $erros[] = "A quilometragem deve ser um número válido.";
     } else {
       $km_atual_int = (int)$km_atual;
-      $km_minimo = (int)$servicoAberto['km_inicio'];
+      $km_minimo = $servicoAberto ? (int)$servicoAberto['km_inicio'] : (int)$atribuicao['quilometragem'];
+      $km_viatura = (int)$atribuicao['quilometragem'];
 
-      if ($km_atual_int < $km_minimo) {
+      if ($servicoAberto && $km_atual_int < $km_minimo) {
         $erros[] = "A quilometragem do abastecimento não pode ser menor que a quilometragem inicial do serviço ({$km_minimo} km).";
+      }
+      if ($km_atual_int < $km_viatura) {
+        $erros[] = "A quilometragem do abastecimento não pode ser menor que a quilometragem atual da viatura ({$km_viatura} km).";
       }
     }
   }
@@ -171,6 +149,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
   if ($longitude !== '' && ((float)$longitude < -180 || (float)$longitude > 180)) {
     $erros[] = "Longitude fora do intervalo válido.";
+  }
+
+  // Processamento de Comprovativo
+  $comprovativo_db = null;
+  if (isset($_FILES['comprovativo']) && $_FILES['comprovativo']['error'] === UPLOAD_ERR_OK) {
+    $fileTmpPath = $_FILES['comprovativo']['tmp_name'];
+    $fileName = $_FILES['comprovativo']['name'];
+    $fileSize = $_FILES['comprovativo']['size'];
+    $fileNameCmps = explode(".", $fileName);
+    $fileExtension = strtolower(end($fileNameCmps));
+
+    $allowedExtensions = ['jpg', 'jpeg', 'png', 'pdf'];
+    if (in_array($fileExtension, $allowedExtensions)) {
+      if ($fileSize <= 5242880) { // 5MB max
+        $newFileName = md5(time() . $fileName) . '.' . $fileExtension;
+        $uploadFileDir = __DIR__ . '/../img/uploads/comprovativos/';
+        if (!is_dir($uploadFileDir)) {
+          mkdir($uploadFileDir, 0755, true);
+        }
+        $dest_path = $uploadFileDir . $newFileName;
+        if (move_uploaded_file($fileTmpPath, $dest_path)) {
+          $comprovativo_db = 'img/uploads/comprovativos/' . $newFileName;
+        } else {
+          $erros[] = "Erro ao mover o comprovativo para a pasta de uploads.";
+        }
+      } else {
+        $erros[] = "O comprovativo excede o limite de tamanho de 5MB.";
+      }
+    } else {
+      $erros[] = "Apenas são permitidos comprovativos nos formatos JPG, JPEG, PNG e PDF.";
+    }
   }
 
   if (!$erros) {
@@ -205,16 +214,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             km_atual,
             data_abastecimento,
             observacoes,
+            comprovativo,
             latitude,
             longitude,
             estado
           )
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
       );
 
       mysqli_stmt_bind_param(
         $stmt,
-        "iiiiissdddissdds",
+        "iiiiissdddidsssds",
         $viatura_id,
         $colaborador_id,
         $motorista_id,
@@ -228,6 +238,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $km_atual_val,
         $data_abastecimento,
         $obs_val,
+        $comprovativo_db,
         $lat_val,
         $lng_val,
         $estado
@@ -296,9 +307,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <div class="page-subtitle">
       Viatura:
       <strong><?php echo h($atribuicao['matricula'] . ' — ' . $atribuicao['marca_modelo']); ?></strong>
-      <span class="text-muted">
-        · Serviço <?php echo h($servicoAberto['codigo']); ?>
-      </span>
+      <?php if ($servicoAberto): ?>
+        <span class="text-muted">
+          · Serviço <?php echo h($servicoAberto['codigo']); ?>
+        </span>
+      <?php endif; ?>
     </div>
   </div>
 
@@ -312,9 +325,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       </ul>
     </div>
   <?php endif; ?>
-
   <div class="glass-card p-4">
-    <form method="post" class="row g-3">
+    <form method="post" enctype="multipart/form-data" class="row g-3">
 
       <div class="col-12 col-md-6">
         <label class="form-label form-label-soft">Posto</label>
@@ -367,7 +379,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <input
           type="number"
           step="1"
-          min="<?php echo (int)$servicoAberto['km_inicio']; ?>"
+          min="<?php echo $servicoAberto ? (int)$servicoAberto['km_inicio'] : (int)$atribuicao['quilometragem']; ?>"
           name="km_atual"
           class="form-control form-control-lg"
           value="<?php echo h($km_atual); ?>"
@@ -383,6 +395,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           value="<?php echo h($data_abastecimento); ?>"
           required
         >
+      </div>
+
+      <div class="col-12">
+        <label class="form-label form-label-soft">Comprovativo de Abastecimento (Imagem ou PDF)</label>
+        <input type="file" name="comprovativo" class="form-control form-control-lg" accept=".jpg,.jpeg,.png,.pdf">
+        <div class="form-text text-muted" style="font-size: 12px;">Máximo 5MB. Formatos suportados: JPG, JPEG, PNG, PDF.</div>
       </div>
 
       <div class="col-12">

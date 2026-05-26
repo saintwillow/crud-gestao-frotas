@@ -8,9 +8,21 @@ require_once __DIR__ . "/inc/header.php";
 
 function h($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 
+// ── Filtros por base operacional (gestor restrito) ────────────────────────
+$filtro_base_viaturas = "";
+$filtro_base_subquery = "";
+$filtro_base_v_prefix = "";
+
+if (perfil_atual() === 'gestor' && infraestrutura_id_sessao() !== null) {
+  $infra_id = (int)infraestrutura_id_sessao();
+  $filtro_base_viaturas = " WHERE infraestrutura_id = {$infra_id}";
+  $filtro_base_subquery = " AND viatura_id IN (SELECT id FROM viaturas WHERE infraestrutura_id = {$infra_id})";
+  $filtro_base_v_prefix = " AND v.infraestrutura_id = {$infra_id}";
+}
+
 // ── KPIs de viaturas ──────────────────────────────────────────────────────
 $totalVeiculos = 0; $emManutencao = 0; $ativos = 0; $inativos = 0;
-$r = mysqli_query($ligacao, "SELECT estado, COUNT(*) AS n FROM viaturas GROUP BY estado");
+$r = mysqli_query($ligacao, "SELECT estado, COUNT(*) AS n FROM viaturas {$filtro_base_viaturas} GROUP BY estado");
 if ($r) while ($row = mysqli_fetch_assoc($r)) {
   $totalVeiculos += (int)$row['n'];
   $e = $row['estado'];
@@ -23,13 +35,13 @@ if ($r) while ($row = mysqli_fetch_assoc($r)) {
 $mesAtual = date('Y-m');
 $r = mysqli_query($ligacao,
   "SELECT COALESCE(SUM(custo),0) AS total FROM manutencoes
-   WHERE DATE_FORMAT(data_inicio,'%Y-%m')='$mesAtual'"
+   WHERE DATE_FORMAT(data_inicio,'%Y-%m')='$mesAtual' {$filtro_base_subquery}"
 );
 $custoManutencao = $r ? (float)(mysqli_fetch_assoc($r)['total'] ?? 0) : 0;
 
 $r = mysqli_query($ligacao,
   "SELECT COALESCE(SUM(total),0) AS total FROM abastecimentos
-   WHERE DATE_FORMAT(data_abastecimento,'%Y-%m')='$mesAtual'"
+   WHERE DATE_FORMAT(data_abastecimento,'%Y-%m')='$mesAtual' {$filtro_base_subquery}"
 );
 $custoCombustivel = $r ? (float)(mysqli_fetch_assoc($r)['total'] ?? 0) : 0;
 $custoMensal = $custoManutencao + $custoCombustivel;
@@ -37,7 +49,7 @@ $custoMensal = $custoManutencao + $custoCombustivel;
 // ── Preço médio por litro este mês (substitui "combustível médio 58%") ────
 $r = mysqli_query($ligacao,
   "SELECT COALESCE(AVG(preco_litro),0) AS media FROM abastecimentos
-   WHERE DATE_FORMAT(data_abastecimento,'%Y-%m')='$mesAtual'"
+   WHERE DATE_FORMAT(data_abastecimento,'%Y-%m')='$mesAtual' {$filtro_base_subquery}"
 );
 $precoMedioLitro = $r ? (float)(mysqli_fetch_assoc($r)['media'] ?? 0) : 0;
 
@@ -52,7 +64,7 @@ for ($i = 5; $i >= 0; $i--) {
 
   $r = mysqli_query($ligacao,
     "SELECT COALESCE(SUM(total),0) AS total FROM abastecimentos
-     WHERE DATE_FORMAT(data_abastecimento,'%Y-%m')='$mes'"
+     WHERE DATE_FORMAT(data_abastecimento,'%Y-%m')='$mes' {$filtro_base_subquery}"
   );
   $val = $r ? (float)(mysqli_fetch_assoc($r)['total'] ?? 0) : 0;
   $fuelData[] = ['month' => $label, 'value' => round($val, 2)];
@@ -71,6 +83,7 @@ $recentRes = mysqli_query($ligacao,
           m.nome AS motorista_nome
    FROM viaturas v
    LEFT JOIN motoristas m ON m.viatura_id = v.id AND m.status='Ativo'
+   WHERE 1=1 {$filtro_base_v_prefix}
    ORDER BY v.id DESC LIMIT 5"
 );
 
@@ -80,25 +93,39 @@ $manRes = mysqli_query($ligacao,
   "SELECT m.id, m.descricao, m.data_inicio, m.custo, m.status, v.matricula
    FROM manutencoes m
    LEFT JOIN viaturas v ON v.id = m.viatura_id
-   WHERE m.status IN ('Agendada','Em andamento','Pendente')
+   WHERE m.status IN ('Agendada','Em andamento','Pendente') {$filtro_base_v_prefix}
    ORDER BY m.data_inicio ASC LIMIT 5"
 );
 if ($manRes) while ($row = mysqli_fetch_assoc($manRes)) $upcoming[] = $row;
 
-// ── Alertas: cartas de condução a vencer nos próximos 60 dias ────────────
+// ── Alertas: cartas de condução a vencer ───────────────────────────────────
+$sys_settings = get_configuracoes_sistema();
+$dias_limite = (int)($sys_settings['alerta_carta_dias'] ?? 60);
 $alertasCarta = [];
 $hoje = date('Y-m-d');
-$limite60 = date('Y-m-d', strtotime('+60 days'));
+$limite60 = date('Y-m-d', strtotime("+{$dias_limite} days"));
 $alertaRes = mysqli_query($ligacao,
-  "SELECT nome, carta_categoria, carta_validade,
-          DATEDIFF(carta_validade, CURDATE()) AS dias_restantes
-   FROM motoristas
-   WHERE status='Ativo'
-     AND carta_validade IS NOT NULL
-     AND carta_validade <= '$limite60'
-   ORDER BY carta_validade ASC"
+  "SELECT m.nome, m.carta_categoria, m.carta_validade,
+          DATEDIFF(m.carta_validade, CURDATE()) AS dias_restantes
+   FROM motoristas m
+   LEFT JOIN viaturas v ON v.id = m.viatura_id
+   WHERE m.status='Ativo'
+     AND m.carta_validade IS NOT NULL
+     AND m.carta_validade <= '$limite60' {$filtro_base_v_prefix}
+   ORDER BY m.carta_validade ASC"
 );
 if ($alertaRes) while ($row = mysqli_fetch_assoc($alertaRes)) $alertasCarta[] = $row;
+
+// ── Alertas: Ocorrências críticas/altas ativas ─────────────────────────────
+$alertasOcorrencias = [];
+$ocRes = mysqli_query($ligacao,
+  "SELECT o.id, o.codigo, o.titulo, o.gravidade, v.matricula
+   FROM ocorrencias o
+   LEFT JOIN viaturas v ON v.id = o.viatura_id
+   WHERE o.gravidade IN ('alta','critica') AND o.estado IN ('aberta','em_analise') {$filtro_base_v_prefix}
+   ORDER BY o.criado_em DESC LIMIT 5"
+);
+if ($ocRes) while ($row = mysqli_fetch_assoc($ocRes)) $alertasOcorrencias[] = $row;
 
 function badgeEstadoDashboard($estado) {
   $estado = trim((string)$estado);
@@ -121,7 +148,7 @@ function badgeEstadoDashboard($estado) {
 <div class="glass-card p-3 mb-4" style="border-left: 3px solid hsl(38,92%,50%);">
   <div class="d-flex align-items-center gap-2 mb-2">
     <i class="bi bi-exclamation-triangle-fill" style="color:hsl(38,92%,50%);"></i>
-    <strong class="small">Cartas de condução a vencer nos próximos 60 dias</strong>
+    <strong class="small">Cartas de condução a vencer nos próximos <?php echo $dias_limite; ?> dias</strong>
   </div>
   <div class="vstack gap-2">
     <?php foreach ($alertasCarta as $a): ?>
@@ -139,6 +166,31 @@ function badgeEstadoDashboard($estado) {
           <span class="text-muted"><?php echo h($a['carta_validade']); ?></span>
           <span class="badge-pill <?php echo $cor; ?>"><?php echo $txt; ?></span>
         </div>
+      </div>
+    <?php endforeach; ?>
+  </div>
+</div>
+<?php endif; ?>
+
+<?php if (count($alertasOcorrencias) > 0): ?>
+<!-- Faixa de alertas de ocorrências críticas -->
+<div class="glass-card p-3 mb-4" style="border-left: 3px solid hsl(0, 72%, 51%);">
+  <div class="d-flex align-items-center gap-2 mb-2">
+    <i class="bi bi-exclamation-octagon-fill text-danger"></i>
+    <strong class="small text-danger">Ocorrências Críticas / Altas Ativas</strong>
+  </div>
+  <div class="vstack gap-2">
+    <?php foreach ($alertasOcorrencias as $oc): ?>
+      <div class="d-flex align-items-center justify-content-between gap-2 small">
+        <div>
+          <a href="ocorrencias/show.php?id=<?php echo (int)$oc['id']; ?>" class="fw-semibold text-danger text-decoration-none">
+            <?php echo h($oc['codigo'] . " - " . $oc['titulo']); ?>
+          </a>
+          <span class="text-muted ms-2">Viatura: <?php echo h($oc['matricula'] ?? 'Sem Viatura'); ?></span>
+        </div>
+        <span class="badge-pill bg-danger bg-opacity-25 text-danger border border-danger border-opacity-25 text-uppercase" style="font-size: 10px; padding: 2px 6px;">
+          <?php echo h($oc['gravidade']); ?>
+        </span>
       </div>
     <?php endforeach; ?>
   </div>
