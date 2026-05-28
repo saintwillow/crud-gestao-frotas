@@ -16,6 +16,7 @@ $posto = '';
 $combustivel = 'Diesel';
 $litros = '';
 $preco_litro = '';
+$km_atual = '';
 $data_abastecimento = date('Y-m-d');
 $observacoes = '';
 $latitude = '';
@@ -36,17 +37,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $combustivel = trim($_POST['combustivel'] ?? '');
   $litros = trim($_POST['litros'] ?? '');
   $preco_litro = trim($_POST['preco_litro'] ?? '');
+  $km_atual = trim($_POST['km_atual'] ?? '');
   $data_abastecimento = trim($_POST['data_abastecimento'] ?? '');
   $observacoes = trim($_POST['observacoes'] ?? '');
   $latitude = trim($_POST['latitude'] ?? '');
   $longitude = trim($_POST['longitude'] ?? '');
 
-  if ($viatura_id === '' || !ctype_digit($viatura_id)) $erros[] = "Selecione uma viatura.";
+  if ($viatura_id === '' || !ctype_digit($viatura_id)) {
+    $erros[] = "Selecione uma viatura.";
+  } else {
+    $vid = (int)$viatura_id;
+    // Buscar quilometragem atual da viatura para validar
+    $resCheckV = mysqli_query($ligacao, "SELECT quilometragem FROM viaturas WHERE id = $vid LIMIT 1");
+    $viaturaKmAtual = 0;
+    if ($resCheckV && $vRow = mysqli_fetch_assoc($resCheckV)) {
+      $viaturaKmAtual = (int)$vRow['quilometragem'];
+    }
+  }
+
   if ($colaborador_id !== '' && !ctype_digit($colaborador_id)) $erros[] = "Motorista inválido.";
   if ($posto === '') $erros[] = "O posto é obrigatório.";
   if ($litros === '' || !is_numeric($litros) || (float)$litros <= 0) $erros[] = "Informe os litros (maior que 0).";
   if ($preco_litro === '' || !is_numeric($preco_litro) || (float)$preco_litro <= 0) $erros[] = "Informe o preço por litro (maior que 0).";
   if ($data_abastecimento === '') $erros[] = "A data é obrigatória.";
+
+  $km_val = null;
+  if ($km_atual !== '') {
+    if (!ctype_digit($km_atual)) {
+      $erros[] = "A quilometragem deve ser um número inteiro válido.";
+    } else {
+      $km_val = (int)$km_atual;
+      if (isset($viaturaKmAtual) && $km_val < $viaturaKmAtual) {
+        $erros[] = "A quilometragem inserida ({$km_val} km) não pode ser menor que a quilometragem atual da viatura ({$viaturaKmAtual} km).";
+      }
+    }
+  }
 
   if (($latitude !== '' && !is_numeric($latitude)) || ($longitude !== '' && !is_numeric($longitude))) {
     $erros[] = "As coordenadas são inválidas.";
@@ -60,33 +85,98 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $erros[] = "Longitude fora do intervalo válido.";
   }
 
+  // Processamento de Comprovativo
+  $comprovativo_db = null;
+  if (isset($_FILES['comprovativo']) && $_FILES['comprovativo']['error'] === UPLOAD_ERR_OK) {
+    $fileTmpPath = $_FILES['comprovativo']['tmp_name'];
+    $fileName = $_FILES['comprovativo']['name'];
+    $fileSize = $_FILES['comprovativo']['size'];
+    $fileNameCmps = explode(".", $fileName);
+    $fileExtension = strtolower(end($fileNameCmps));
+
+    $allowedExtensions = ['jpg', 'jpeg', 'png', 'pdf'];
+    if (in_array($fileExtension, $allowedExtensions)) {
+      if ($fileSize <= 5242880) { // 5MB max
+        $newFileName = md5(time() . $fileName) . '.' . $fileExtension;
+        $uploadFileDir = __DIR__ . '/../img/uploads/comprovativos/';
+        if (!is_dir($uploadFileDir)) {
+          mkdir($uploadFileDir, 0755, true);
+        }
+        $dest_path = $uploadFileDir . $newFileName;
+        if (move_uploaded_file($fileTmpPath, $dest_path)) {
+          $comprovativo_db = 'img/uploads/comprovativos/' . $newFileName;
+        } else {
+          $erros[] = "Erro ao mover o comprovativo para a pasta de uploads.";
+        }
+      } else {
+        $erros[] = "O comprovativo excede o limite de tamanho de 5MB.";
+      }
+    } else {
+      $erros[] = "Apenas são permitidos comprovativos nos formatos JPG, JPEG, PNG e PDF.";
+    }
+  }
+
   if (!$erros) {
     $vid        = (int)$viatura_id;
     $cid_val    = ($colaborador_id !== '' && (int)$colaborador_id > 0) ? (int)$colaborador_id : null;
+    
+    // Tentamos também obter o motorista_id associado a este colaborador se possível
+    $motorista_val = null;
+    if ($cid_val !== null) {
+      $resMot = mysqli_query($ligacao, "SELECT id FROM motoristas WHERE colaborador_id = $cid_val LIMIT 1");
+      if ($resMot && $mRow = mysqli_fetch_assoc($resMot)) {
+        $motorista_val = (int)$mRow['id'];
+      }
+    }
+
     $lit        = (float)$litros;
     $pl         = (float)$preco_litro;
     $total      = round($lit * $pl, 2);
     $obs_val    = $observacoes !== '' ? $observacoes : null;
     $lat_val    = $latitude !== '' ? (float)$latitude : null;
     $lng_val    = $longitude !== '' ? (float)$longitude : null;
+    $usuario_reg = usuario_id_sessao();
 
-    $stmt = mysqli_prepare($ligacao,
-      "INSERT INTO abastecimentos
-         (viatura_id, colaborador_id, posto, combustivel, litros, preco_litro, total, data_abastecimento, observacoes, latitude, longitude)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-    );
-    mysqli_stmt_bind_param($stmt, "iissdddssdd",
-      $vid, $cid_val, $posto, $combustivel, $lit, $pl, $total,
-      $data_abastecimento, $obs_val, $lat_val, $lng_val
-    );
+    mysqli_begin_transaction($ligacao);
 
-    if (mysqli_stmt_execute($stmt)) {
+    try {
+      $stmt = mysqli_prepare($ligacao,
+        "INSERT INTO abastecimentos
+           (viatura_id, colaborador_id, motorista_id, registado_por_usuario_id, posto, combustivel, litros, preco_litro, total, km_atual, data_abastecimento, observacoes, comprovativo, latitude, longitude, estado, aprovado_por_usuario_id, aprovado_em)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'registado', ?, NOW())"
+      );
+      mysqli_stmt_bind_param($stmt, "iiiissdddisssddi",
+        $vid, $cid_val, $motorista_val, $usuario_reg, $posto, $combustivel, $lit, $pl, $total, $km_val,
+        $data_abastecimento, $obs_val, $comprovativo_db, $lat_val, $lng_val, $usuario_reg
+      );
+
+      if (!mysqli_stmt_execute($stmt)) {
+        throw new Exception(mysqli_error($ligacao));
+      }
+      mysqli_stmt_close($stmt);
+
+      // Atualizar quilometragem do veículo
+      if ($km_val !== null) {
+        $stmtV = mysqli_prepare($ligacao,
+          "UPDATE viaturas
+           SET quilometragem = GREATEST(quilometragem, ?)
+           WHERE id = ?"
+        );
+        mysqli_stmt_bind_param($stmtV, "ii", $km_val, $vid);
+        if (!mysqli_stmt_execute($stmtV)) {
+          throw new Exception(mysqli_error($ligacao));
+        }
+        mysqli_stmt_close($stmtV);
+      }
+
+      mysqli_commit($ligacao);
+
       header("Location: index.php?msg=criado");
       exit;
-    } else {
-      $erros[] = "Erro ao salvar: " . mysqli_error($ligacao);
+    } catch (Exception $e) {
+      mysqli_rollback($ligacao);
+      $erros[] = "Erro ao salvar no banco de dados: " . $e->getMessage();
     }
-    mysqli_stmt_close($stmt);
   }
 }
 ?>
@@ -135,7 +225,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <?php endif; ?>
 
   <div class="glass-card p-4">
-    <form method="post" class="row g-3">
+    <form method="post" enctype="multipart/form-data" class="row g-3">
 
       <div class="col-12">
         <label class="form-label form-label-soft">Viatura *</label>
@@ -177,19 +267,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </select>
       </div>
 
-      <div class="col-12 col-md-4">
+      <div class="col-12 col-md-3">
         <label class="form-label form-label-soft">Litros *</label>
         <input type="number" step="0.01" min="0" name="litros" class="form-control form-control-lg" value="<?php echo h($litros); ?>" required>
       </div>
 
-      <div class="col-12 col-md-4">
+      <div class="col-12 col-md-3">
         <label class="form-label form-label-soft">Preço/Litro *</label>
         <input type="number" step="0.001" min="0" name="preco_litro" class="form-control form-control-lg" value="<?php echo h($preco_litro); ?>" required>
       </div>
 
-      <div class="col-12 col-md-4">
+      <div class="col-12 col-md-3">
+        <label class="form-label form-label-soft">Km atual (opcional)</label>
+        <input type="number" step="1" name="km_atual" class="form-control form-control-lg" value="<?php echo h($km_atual); ?>" placeholder="Ex: 85200">
+      </div>
+
+      <div class="col-12 col-md-3">
         <label class="form-label form-label-soft">Data *</label>
         <input type="date" name="data_abastecimento" class="form-control form-control-lg" value="<?php echo h($data_abastecimento); ?>" required>
+      </div>
+
+      <div class="col-12">
+        <label class="form-label form-label-soft">Comprovativo de Abastecimento (Imagem ou PDF)</label>
+        <input type="file" name="comprovativo" class="form-control form-control-lg" accept=".jpg,.jpeg,.png,.pdf">
+        <div class="form-text text-muted" style="font-size: 12px;">Máximo 5MB. Formatos suportados: JPG, JPEG, PNG, PDF.</div>
       </div>
 
       <div class="col-12">

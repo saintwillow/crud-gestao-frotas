@@ -11,6 +11,8 @@ function h($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 if ($id <= 0) { header("Location: index.php"); exit; }
 
+pode_ver_viatura($ligacao, $id);
+
 $stmt = mysqli_prepare($ligacao, "SELECT id, matricula, marca_modelo FROM viaturas WHERE id=? LIMIT 1");
 mysqli_stmt_bind_param($stmt, "i", $id);
 mysqli_stmt_execute($stmt);

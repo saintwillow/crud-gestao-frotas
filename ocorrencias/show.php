@@ -50,6 +50,8 @@ if ($id <= 0) {
   exit;
 }
 
+pode_ver_ocorrencia($ligacao, $id);
+
 // Carregar ocorrência
 $stmt = mysqli_prepare($ligacao,
   "SELECT
@@ -131,89 +133,85 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'convert
   $oficina = trim($_POST['oficina'] ?? '');
   $custo = trim($_POST['custo'] ?? '0');
 
+  if ($oc['estado'] === 'convertida_manutencao' || !empty($oc['manutencao_id'])) {
+    $erros[] = "Esta ocorrência já foi convertida em manutenção anteriormente.";
+  }
+
   if ($descricao_manutencao === '') {
     $descricao_manutencao = "Manutenção corretiva via Ocorrência " . $oc['codigo'] . " - " . $oc['titulo'];
   }
 
   $custo_val = is_numeric($custo) ? (float)$custo : 0.0;
 
-  mysqli_begin_transaction($ligacao);
+  if (!$erros) {
+    mysqli_begin_transaction($ligacao);
 
-  try {
-    // 1. Inserir na tabela manutencoes
-    $stmt = mysqli_prepare($ligacao,
-      "INSERT INTO manutencoes
-        (
-          viatura_id,
-          tipo,
-          descricao,
-          data_inicio,
-          custo,
-          oficina,
-          status,
-          criado_por_usuario_id,
-          observacoes
-        )
-       VALUES (?, ?, ?, CURDATE(), ?, ?, 'Em andamento', ?, ?)"
-    );
+    try {
+      // 1. Inserir na tabela manutencoes
+      $stmt = mysqli_prepare($ligacao,
+        "INSERT INTO manutencoes
+          (
+            viatura_id,
+            tipo,
+            descricao,
+            data_inicio,
+            custo,
+            oficina,
+            status,
+            criado_por_usuario_id,
+            observacoes
+          )
+         VALUES (?, ?, ?, CURDATE(), ?, ?, 'Em andamento', ?, ?)"
+      );
 
-    mysqli_stmt_bind_param(
-      $stmt,
-      "issdsiis",
-      $oc['viatura_id'],
-      $tipo_manutencao,
-      $descricao_manutencao,
-      $custo_val,
-      $oficina,
-      $usuario_gestor_id,
-      $obs_gestor
-    );
+      mysqli_stmt_bind_param(
+        $stmt,
+        "issdsis",
+        $oc['viatura_id'],
+        $tipo_manutencao,
+        $descricao_manutencao,
+        $custo_val,
+        $oficina,
+        $usuario_gestor_id,
+        $obs_gestor
+      );
 
-    if (!mysqli_stmt_execute($stmt)) {
-      throw new Exception(mysqli_error($ligacao));
+      if (!mysqli_stmt_execute($stmt)) {
+        throw new Exception(mysqli_error($ligacao));
+      }
+
+      $manutencao_id = mysqli_insert_id($ligacao);
+      mysqli_stmt_close($stmt);
+
+      // 2. Atualizar ocorrência
+      $estado_manutencao = 'convertida_manutencao';
+      $stmt = mysqli_prepare($ligacao,
+        "UPDATE ocorrencias
+         SET estado = ?,
+             manutencao_id = ?,
+             observacao_gestor = ?,
+             avaliado_por_usuario_id = ?,
+             avaliado_em = NOW()
+         WHERE id = ?"
+      );
+      mysqli_stmt_bind_param($stmt, "sisii", $estado_manutencao, $manutencao_id, $obs_gestor, $usuario_gestor_id, $id);
+      
+      if (!mysqli_stmt_execute($stmt)) {
+        throw new Exception(mysqli_error($ligacao));
+      }
+      mysqli_stmt_close($stmt);
+
+      // 3. Atualizar viatura estado usando recalcular_estado_viatura
+      recalcular_estado_viatura($ligacao, $oc['viatura_id']);
+
+      mysqli_commit($ligacao);
+      header("Location: index.php?msg=manutencao");
+      exit;
+
+    } catch (Exception $e) {
+      mysqli_rollback($ligacao);
+      $erros[] = "Erro ao converter para manutenção: " . $e->getMessage();
     }
-
-    $manutencao_id = mysqli_insert_id($ligacao);
-    mysqli_stmt_close($stmt);
-
-    // 2. Atualizar ocorrência
-    $estado_manutencao = 'convertida_manutencao';
-    $stmt = mysqli_prepare($ligacao,
-      "UPDATE ocorrencias
-       SET estado = ?,
-           manutencao_id = ?,
-           observacao_gestor = ?,
-           avaliado_por_usuario_id = ?,
-           avaliado_em = NOW()
-       WHERE id = ?"
-    );
-    mysqli_stmt_bind_param($stmt, "sisii", $estado_manutencao, $manutencao_id, $obs_gestor, $usuario_gestor_id, $id);
-    
-    if (!mysqli_stmt_execute($stmt)) {
-      throw new Exception(mysqli_error($ligacao));
-    }
-    mysqli_stmt_close($stmt);
-
-    // 3. Atualizar viatura para "Em Manutenção"
-    $stmt = mysqli_prepare($ligacao,
-      "UPDATE viaturas
-       SET estado = 'Em Manutenção'
-       WHERE id = ?"
-    );
-    mysqli_stmt_bind_param($stmt, "i", $oc['viatura_id']);
-    
-    if (!mysqli_stmt_execute($stmt)) {
-      throw new Exception(mysqli_error($ligacao));
-    }
-    mysqli_stmt_close($stmt);
-
-    mysqli_commit($ligacao);
-    header("Location: index.php?msg=manutencao");
-    exit;
-
-  } catch (Exception $e) {
-    mysqli_rollback($ligacao);
-    $erros[] = "Erro ao converter para manutenção: " . $e->getMessage();
   }
 }
 

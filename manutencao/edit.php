@@ -11,6 +11,8 @@ function h($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 $id = (int)($_GET['id'] ?? 0);
 if ($id <= 0) { header("Location: index.php"); exit; }
 
+pode_ver_manutencao($ligacao, $id);
+
 $stmt = mysqli_prepare($ligacao, "SELECT * FROM manutencoes WHERE id=? LIMIT 1");
 mysqli_stmt_bind_param($stmt, "i", $id);
 mysqli_stmt_execute($stmt);
@@ -35,7 +37,12 @@ $oficina     = (string)($m['oficina'] ?? '');
 $status      = (string)($m['status'] ?? 'Agendada');
 
 $viaturas = [];
-$resV = mysqli_query($ligacao, "SELECT id, matricula, marca_modelo FROM viaturas ORDER BY marca_modelo ASC");
+$whereV = "1=1";
+if (is_gestor_zona()) {
+  $zid = (int)zona_id_sessao();
+  $whereV .= " AND zona_operacional_id = $zid";
+}
+$resV = mysqli_query($ligacao, "SELECT id, matricula, marca_modelo FROM viaturas WHERE $whereV ORDER BY marca_modelo ASC");
 if ($resV) while ($r = mysqli_fetch_assoc($resV)) $viaturas[] = $r;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -54,6 +61,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   if ($data_fim !== '' && $data_fim < $data_inicio) $erros[] = "A data fim não pode ser menor que a data início.";
   if ($custo !== '' && !is_numeric($custo)) $erros[] = "O custo deve ser numérico (ou vazio).";
 
+  // Validação extra de segurança de zona ao salvar
+  if (is_gestor_zona() && $viatura_id !== '') {
+    $zid = (int)zona_id_sessao();
+    $chkV = mysqli_query($ligacao, "SELECT zona_operacional_id FROM viaturas WHERE id = " . (int)$viatura_id);
+    if ($chkV && $rV = mysqli_fetch_assoc($chkV)) {
+      if ($rV['zona_operacional_id'] !== null && (int)$rV['zona_operacional_id'] !== $zid) {
+        $erros[] = "A viatura selecionada não pertence à sua zona.";
+      }
+    }
+  }
+
   if (!$erros) {
     $vid         = (int)$viatura_id;
     $fim_val     = $data_fim !== '' ? $data_fim : null;
@@ -64,11 +82,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       "UPDATE manutencoes SET viatura_id=?, tipo=?, descricao=?, data_inicio=?, data_fim=?,
        custo=?, oficina=?, status=? WHERE id=?"
     );
-    mysqli_stmt_bind_param($stmt, "issssdsi",
+    mysqli_stmt_bind_param($stmt, "issssdssi",
       $vid, $tipo, $descricao, $data_inicio, $fim_val, $custo_val, $oficina_val, $status, $id
     );
 
     if (mysqli_stmt_execute($stmt)) {
+      recalcular_estado_viatura($ligacao, $vid);
+      if ((int)$m['viatura_id'] !== $vid) {
+        recalcular_estado_viatura($ligacao, (int)$m['viatura_id']);
+      }
       header("Location: index.php?msg=editada");
       exit;
     } else {
@@ -123,7 +145,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <div class="col-12 col-md-4">
         <label class="form-label form-label-soft">Tipo</label>
         <select name="tipo" class="form-select form-select-lg">
-          <?php foreach (['Preventiva','Corretiva','Revisão','Outro'] as $t): ?>
+          <?php foreach (['Preventiva','Corretiva','Inspeção','Pneus','Óleo','Outro'] as $t): ?>
             <option value="<?php echo h($t); ?>" <?php echo ($tipo===$t)?'selected':''; ?>><?php echo h($t); ?></option>
           <?php endforeach; ?>
         </select>

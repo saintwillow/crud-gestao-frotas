@@ -360,15 +360,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'finaliz
       mysqli_stmt_execute($stmt);
       mysqli_stmt_close($stmt);
 
-      /* Atualizar atribuição */
-      $stmt = mysqli_prepare($ligacao,
-        "UPDATE atribuicoes
-         SET km_fim = ?
-         WHERE id = ?"
-      );
-      mysqli_stmt_bind_param($stmt, "ii", $km_fim_int, $atribuicao_id);
-      mysqli_stmt_execute($stmt);
-      mysqli_stmt_close($stmt);
+      // O encerramento/atualização de km_fim da atribuição é feito exclusivamente pelo Gestor no módulo Atribuições.
 
       mysqli_commit($ligacao);
 

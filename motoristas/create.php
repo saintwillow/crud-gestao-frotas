@@ -9,20 +9,22 @@ require_once __DIR__ . "/../inc/header.php";
 function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 
 $erros = [];
-$nome = $cc = $nif = $carta_numero = $carta_categoria = $carta_validade = '';
+$nome = $cc = $documento_tipo = $documento_num = $nif = $carta_numero = $carta_categoria = $carta_validade = '';
 $telefone = $email = $desde = '';
 $status = 'Ativo';
 $viagens = 0;
-$viatura_id = '';
+$zona_operacional_id = '';
 
-// lista viaturas p/ select
-$viaturas = [];
-$rV = mysqli_query($ligacao, "SELECT id, matricula, marca_modelo FROM viaturas ORDER BY matricula ASC");
-if ($rV) while ($row = mysqli_fetch_assoc($rV)) $viaturas[] = $row;
+// Carregar todas as zonas operacionais ativas para o select (se for admin ou gestor global)
+$zonas = [];
+$resZ = mysqli_query($ligacao, "SELECT id, nome FROM zonas_operacionais WHERE ativo=1 ORDER BY nome ASC");
+if ($resZ) while ($r = mysqli_fetch_assoc($resZ)) $zonas[] = $r;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $nome           = trim($_POST['nome'] ?? '');
-  $cc             = trim($_POST['cc'] ?? '');
+  $documento_tipo = trim($_POST['documento_tipo'] ?? 'Cartão de Cidadão');
+  $documento_num  = trim($_POST['documento_num'] ?? '');
+  $cc             = $documento_num !== '' ? ($documento_tipo . ': ' . $documento_num) : '';
   $nif            = trim($_POST['nif'] ?? '');
   $carta_numero   = trim($_POST['carta_numero'] ?? '');
   $carta_categoria= trim($_POST['carta_categoria'] ?? '');
@@ -32,48 +34,61 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $status         = ($_POST['status'] ?? 'Ativo') === 'Inativo' ? 'Inativo' : 'Ativo';
   $desde          = $_POST['desde'] ?? '';
   $viagens        = max(0, (int)($_POST['viagens'] ?? 0));
-  $viatura_id     = $_POST['viatura_id'] ?? '';
+
+  if (is_gestor_zona()) {
+    $zona_val = zona_id_sessao();
+  } else {
+    $zona_val = (isset($_POST['zona_operacional_id']) && $_POST['zona_operacional_id'] !== '') ? (int)$_POST['zona_operacional_id'] : null;
+  }
 
   if ($nome === '') $erros[] = "O nome é obrigatório.";
-  if ($nif !== '' && !preg_match('/^\d{9}$/', preg_replace('/\D/', '', $nif)))
-    $erros[] = "NIF inválido (deve ter 9 dígitos).";
+  if ($nif !== '' && !preg_match('/^\d{9}$/', $nif))
+    $erros[] = "NIF inválido (deve ter exatamente 9 dígitos).";
   if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL))
     $erros[] = "E-mail inválido.";
 
   $carta_validade_db = ($carta_validade !== '') ? $carta_validade : null;
   $desde_db          = ($desde !== '') ? $desde : null;
-  $viatura_id_int    = ($viatura_id !== '' && (int)$viatura_id > 0) ? (int)$viatura_id : null;
 
   if (count($erros) === 0) {
-    if ($viatura_id_int === null) {
-      $stmt = mysqli_prepare($ligacao,
-        "INSERT INTO motoristas (nome, cc, nif, carta_numero, carta_categoria, carta_validade,
-           telefone, email, status, desde, viagens, viatura_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)"
+    mysqli_begin_transaction($ligacao);
+    try {
+      // 1. Criar colaborador correspondente
+      $stmtCol = mysqli_prepare($ligacao,
+        "INSERT INTO colaboradores (nome, email, telefone, cargo, ativo)
+         VALUES (?, ?, ?, 'Motorista', 1)"
       );
-      mysqli_stmt_bind_param($stmt, "sssssssssi",
-        $nome, $cc, $nif, $carta_numero, $carta_categoria, $carta_validade_db,
-        $telefone, $email, $status, $desde_db, $viagens
-      );
-    } else {
-      $stmt = mysqli_prepare($ligacao,
-        "INSERT INTO motoristas (nome, cc, nif, carta_numero, carta_categoria, carta_validade,
-           telefone, email, status, desde, viagens, viatura_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-      );
-      mysqli_stmt_bind_param($stmt, "sssssssssii",
-        $nome, $cc, $nif, $carta_numero, $carta_categoria, $carta_validade_db,
-        $telefone, $email, $status, $desde_db, $viagens, $viatura_id_int
-      );
-    }
+      mysqli_stmt_bind_param($stmtCol, "sss", $nome, $email, $telefone);
+      if (!mysqli_stmt_execute($stmtCol)) {
+        throw new Exception("Erro ao criar colaborador correspondente: " . mysqli_error($ligacao));
+      }
+      $colaborador_id = mysqli_insert_id($ligacao);
+      mysqli_stmt_close($stmtCol);
 
-    if (mysqli_stmt_execute($stmt)) {
+      // 2. Criar motorista com o colaborador_id associado e zona operacional correspondente
+      $stmt = mysqli_prepare($ligacao,
+        "INSERT INTO motoristas (colaborador_id, nome, cc, nif, carta_numero, carta_categoria, carta_validade,
+           telefone, email, status, desde, viagens, viatura_id, zona_operacional_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)"
+      );
+      mysqli_stmt_bind_param($stmt, "issssssssssii",
+        $colaborador_id, $nome, $cc, $nif, $carta_numero, $carta_categoria, $carta_validade_db,
+        $telefone, $email, $status, $desde_db, $viagens, $zona_val
+      );
+
+      if (!mysqli_stmt_execute($stmt)) {
+        throw new Exception("Erro ao criar motorista: " . mysqli_error($ligacao));
+      }
+      mysqli_stmt_close($stmt);
+
+      mysqli_commit($ligacao);
+
       header("Location: index.php?msg=criado");
       exit;
-    } else {
-      $erros[] = "Erro ao criar motorista: " . mysqli_error($ligacao);
+    } catch (Exception $e) {
+      mysqli_rollback($ligacao);
+      $erros[] = $e->getMessage();
     }
-    mysqli_stmt_close($stmt);
   }
 }
 ?>
@@ -103,27 +118,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       <div class="col-12 col-md-6">
         <label class="form-label form-label-soft">Nome *</label>
-        <input class="form-control" name="nome" value="<?php echo h($nome); ?>" required>
+        <input class="form-control" name="nome" value="<?php echo h($nome); ?>" maxlength="120" required>
       </div>
 
       <div class="col-12 col-md-3">
         <label class="form-label form-label-soft">NIF</label>
-        <input class="form-control" name="nif" value="<?php echo h($nif); ?>" placeholder="9 dígitos">
+        <input class="form-control" name="nif" value="<?php echo h($nif); ?>" placeholder="9 dígitos" maxlength="9" pattern="\d{9}" oninput="this.value = this.value.replace(/[^0-9]/g, '')">
+      </div>
+
+      <?php if (!is_gestor_zona()): ?>
+        <div class="col-12 col-md-3">
+          <label class="form-label form-label-soft">Zona Operacional</label>
+          <select class="form-select" name="zona_operacional_id" required>
+            <option value="">Selecione uma zona...</option>
+            <?php foreach ($zonas as $z): ?>
+              <option value="<?php echo (int)$z['id']; ?>" <?php echo ($zona_operacional_id == (string)$z['id']) ? 'selected' : ''; ?>>
+                <?php echo h($z['nome']); ?>
+              </option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+      <?php endif; ?>
+
+      <div class="col-12 col-md-3">
+        <label class="form-label form-label-soft">Tipo de Documento</label>
+        <select class="form-select" name="documento_tipo">
+          <option value="Cartão de Cidadão" <?php echo ($documento_tipo === 'Cartão de Cidadão') ? 'selected' : ''; ?>>Cartão de Cidadão</option>
+          <option value="Autorização de Residência" <?php echo ($documento_tipo === 'Autorização de Residência') ? 'selected' : ''; ?>>Autorização de Residência</option>
+          <option value="Passaporte" <?php echo ($documento_tipo === 'Passaporte') ? 'selected' : ''; ?>>Passaporte</option>
+        </select>
       </div>
 
       <div class="col-12 col-md-3">
-        <label class="form-label form-label-soft">Cartão de Cidadão (CC)</label>
-        <input class="form-control" name="cc" value="<?php echo h($cc); ?>">
+        <label class="form-label form-label-soft">Nº Documento</label>
+        <input class="form-control" name="documento_num" value="<?php echo h($documento_num); ?>" maxlength="20" placeholder="Insira o número do documento">
       </div>
 
-      <div class="col-12 col-md-4">
+      <div class="col-12 col-md-3">
         <label class="form-label form-label-soft">Carta (nº)</label>
-        <input class="form-control" name="carta_numero" value="<?php echo h($carta_numero); ?>">
+        <input class="form-control" name="carta_numero" value="<?php echo h($carta_numero); ?>" maxlength="30">
       </div>
 
-      <div class="col-12 col-md-4">
+      <div class="col-12 col-md-3">
         <label class="form-label form-label-soft">Categoria</label>
-        <input class="form-control" name="carta_categoria" value="<?php echo h($carta_categoria); ?>" placeholder="ex.: B, C, C+E">
+        <input class="form-control" name="carta_categoria" value="<?php echo h($carta_categoria); ?>" placeholder="ex.: B, C, C+E" maxlength="10">
       </div>
 
       <div class="col-12 col-md-4">
@@ -133,12 +171,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       <div class="col-12 col-md-4">
         <label class="form-label form-label-soft">Telefone</label>
-        <input class="form-control" name="telefone" value="<?php echo h($telefone); ?>">
+        <input class="form-control" name="telefone" value="<?php echo h($telefone); ?>" maxlength="30">
       </div>
 
       <div class="col-12 col-md-4">
         <label class="form-label form-label-soft">E-mail</label>
-        <input class="form-control" name="email" value="<?php echo h($email); ?>">
+        <input class="form-control" name="email" value="<?php echo h($email); ?>" maxlength="120">
       </div>
 
       <div class="col-12 col-md-2">
@@ -154,21 +192,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </select>
       </div>
 
-      <div class="col-12 col-md-6">
-        <label class="form-label form-label-soft">Viatura atribuída</label>
-        <select class="form-select" name="viatura_id">
-          <option value="">Sem viatura</option>
-          <?php foreach ($viaturas as $v): ?>
-            <option value="<?php echo (int)$v['id']; ?>" <?php echo ((string)$viatura_id === (string)$v['id'])?'selected':''; ?>>
-              <?php echo h($v['matricula'] . " — " . $v['marca_modelo']); ?>
-            </option>
-          <?php endforeach; ?>
-        </select>
-      </div>
-
-      <div class="col-12 col-md-6">
+      <div class="col-12 col-md-8">
         <label class="form-label form-label-soft">Desde</label>
         <input class="form-control" type="date" name="desde" value="<?php echo h($desde); ?>">
+      </div>
+
+      <div class="col-12 col-md-12 d-flex align-items-center my-3">
+        <div class="alert alert-info w-100 mb-0 small py-2 px-3">
+          <i class="bi bi-info-circle me-1"></i> A atribuição de viatura é gerida no módulo <a href="../atribuicoes/index.php" class="alert-link fw-semibold">Atribuições</a>.
+        </div>
       </div>
 
       <div class="col-12 d-flex gap-2">

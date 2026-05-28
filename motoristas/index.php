@@ -4,6 +4,32 @@ exigir_gestor_ou_admin();
 
 $active = 'motoristas';
 require_once __DIR__ . "/../inc/database.php";
+
+// Auto-healer: reparar motoristas sem colaborador associado
+$orphansRes = mysqli_query($ligacao, "SELECT id, nome, email, telefone FROM motoristas WHERE colaborador_id IS NULL OR colaborador_id = 0");
+if ($orphansRes && mysqli_num_rows($orphansRes) > 0) {
+  while ($orphan = mysqli_fetch_assoc($orphansRes)) {
+    $orphanId = (int)$orphan['id'];
+    $orphanNome = $orphan['nome'];
+    $orphanEmail = $orphan['email'];
+    $orphanTelefone = $orphan['telefone'];
+
+    // 1. Criar colaborador correspondente
+    $stmtC = mysqli_prepare($ligacao, "INSERT INTO colaboradores (nome, email, telefone, cargo, ativo) VALUES (?, ?, ?, 'Motorista', 1)");
+    mysqli_stmt_bind_param($stmtC, "sss", $orphanNome, $orphanEmail, $orphanTelefone);
+    if (mysqli_stmt_execute($stmtC)) {
+      $colabId = mysqli_insert_id($ligacao);
+      mysqli_stmt_close($stmtC);
+
+      // 2. Vincular este colaborador ao motorista
+      $stmtU = mysqli_prepare($ligacao, "UPDATE motoristas SET colaborador_id = ? WHERE id = ?");
+      mysqli_stmt_bind_param($stmtU, "ii", $colabId, $orphanId);
+      mysqli_stmt_execute($stmtU);
+      mysqli_stmt_close($stmtU);
+    }
+  }
+}
+
 require_once __DIR__ . "/../inc/header.php";
 
 function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
@@ -21,14 +47,20 @@ if ($q !== '') {
     m.email LIKE '%$q_safe%'
   )";
 }
+$where .= sql_filtro_zona_motorista("m");
 
 $sql = "
   SELECT
     m.*,
     v.matricula AS v_matricula,
-    v.marca_modelo AS v_modelo
+    v.marca_modelo AS v_modelo,
+    u.id AS usuario_id,
+    zo.nome AS zona_nome
   FROM motoristas m
-  LEFT JOIN viaturas v ON v.id = m.viatura_id
+  LEFT JOIN atribuicoes a ON a.motorista_id = m.id AND a.estado = 'aberta'
+  LEFT JOIN viaturas v ON v.id = a.viatura_id
+  LEFT JOIN usuarios u ON u.motorista_id = m.id
+  LEFT JOIN zonas_operacionais zo ON zo.id = m.zona_operacional_id
   WHERE $where
   ORDER BY (m.status='Ativo') DESC, m.nome ASC
 ";
@@ -112,6 +144,12 @@ function fmtDate($d){
             </div>
 
             <div class="driver-lines mt-3">
+              <div class="driver-line mb-1">
+                <span class="driver-ico"><i class="bi bi-geo-alt-fill text-primary"></i></span>
+                <span class="text-muted">Zona:</span>
+                <span class="ms-1 fw-semibold text-primary"><?php echo h($m['zona_nome'] ?: 'Geral / Sem zona'); ?></span>
+              </div>
+
               <div class="driver-line">
                 <span class="driver-ico"><i class="bi bi-person-vcard"></i></span>
                 <span class="text-muted">NIF:</span>
@@ -148,6 +186,9 @@ function fmtDate($d){
             <div class="d-flex gap-2 mt-3">
               <?php if (in_array(perfil_atual(), ['admin', 'gestor'], true)): ?>
                 <a class="btn btn-sm btn-outline-primary" href="edit.php?id=<?php echo $id; ?>">Editar</a>
+                <?php if (empty($m['usuario_id']) && $status === 'Ativo' && perfil_atual() === 'admin'): ?>
+                  <a class="btn btn-sm btn-outline-warning" href="../configuracoes/usuarios_create.php?motorista_id=<?php echo $id; ?>">Criar Acesso</a>
+                <?php endif; ?>
                 <a class="btn btn-sm btn-outline-danger" href="delete.php?id=<?php echo $id; ?>">Apagar</a>
               <?php endif; ?>
             </div>

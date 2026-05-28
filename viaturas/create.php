@@ -13,10 +13,22 @@ $matricula = $marca_modelo = $tipo = $combustivel = $observacoes = '';
 $quilometragem = '';
 $estado = 'Disponível';
 $infraestrutura_id = '';
+$zona_operacional_id = '';
 
 $infraestruturas = [];
-$resI = mysqli_query($ligacao, "SELECT id, nome, tipo, sub_regiao FROM infraestruturas WHERE ativo=1 ORDER BY sub_regiao ASC, tipo ASC, nome ASC");
+// Filtrar infraestruturas pela zona do gestor se for gestor de zona
+$whereInfra = "ativo=1";
+if (is_gestor_zona()) {
+  $zid = (int)zona_id_sessao();
+  $whereInfra .= " AND (zona_operacional_id = $zid OR zona_operacional_id IS NULL)";
+}
+$resI = mysqli_query($ligacao, "SELECT id, nome, tipo, sub_regiao FROM infraestruturas WHERE $whereInfra ORDER BY sub_regiao ASC, tipo ASC, nome ASC");
 if ($resI) while ($r = mysqli_fetch_assoc($resI)) $infraestruturas[] = $r;
+
+// Carregar zonas operacionais
+$zonas = [];
+$resZ = mysqli_query($ligacao, "SELECT id, nome FROM zonas_operacionais WHERE ativo=1 ORDER BY nome ASC");
+if ($resZ) while ($r = mysqli_fetch_assoc($resZ)) $zonas[] = $r;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $matricula       = trim($_POST['matricula'] ?? '');
@@ -27,6 +39,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $estado          = trim($_POST['estado'] ?? 'Disponível');
   $observacoes     = trim($_POST['observacoes'] ?? '');
   $infraestrutura_id = trim($_POST['infraestrutura_id'] ?? '');
+
+  if (is_gestor_zona()) {
+    $zona_val = zona_id_sessao();
+  } else {
+    $zona_val = (isset($_POST['zona_operacional_id']) && $_POST['zona_operacional_id'] !== '') ? (int)$_POST['zona_operacional_id'] : null;
+  }
 
   if ($matricula === '')   $erros[] = "A matrícula é obrigatória.";
   if ($marca_modelo === '') $erros[] = "A marca/modelo é obrigatória.";
@@ -39,11 +57,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $infra_val      = ($infraestrutura_id !== '' && (int)$infraestrutura_id > 0) ? (int)$infraestrutura_id : null;
 
     $stmt = mysqli_prepare($ligacao,
-      "INSERT INTO viaturas (matricula, marca_modelo, tipo, combustivel, quilometragem, estado, observacoes, infraestrutura_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+      "INSERT INTO viaturas (matricula, marca_modelo, tipo, combustivel, quilometragem, estado, observacoes, infraestrutura_id, zona_operacional_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
     );
-    mysqli_stmt_bind_param($stmt, "ssssisis",
-      $matricula, $marca_modelo, $tipo, $combustivel, $km, $estado, $obs_val, $infra_val
+    mysqli_stmt_bind_param($stmt, "ssssisiii",
+      $matricula, $marca_modelo, $tipo, $combustivel, $km, $estado, $obs_val, $infra_val, $zona_val
     );
 
     if (mysqli_stmt_execute($stmt)) {
@@ -86,11 +104,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                value="<?php echo h($matricula); ?>" placeholder="ABC-1234" required>
       </div>
 
-      <div class="col-12 col-md-8">
+      <div class="col-12 col-md-5">
         <label class="form-label form-label-soft">Marca/Modelo *</label>
         <input type="text" name="marca_modelo" class="form-control form-control-lg"
                value="<?php echo h($marca_modelo); ?>" placeholder="Mercedes-Benz Sprinter 515" required>
       </div>
+
+      <?php if (!is_gestor_zona()): ?>
+        <div class="col-12 col-md-3">
+          <label class="form-label form-label-soft">Zona Operacional</label>
+          <select name="zona_operacional_id" class="form-select form-select-lg" required>
+            <option value="">Selecione...</option>
+            <?php foreach ($zonas as $z): ?>
+              <option value="<?php echo (int)$z['id']; ?>" <?php echo ($zona_operacional_id == (string)$z['id']) ? 'selected' : ''; ?>>
+                <?php echo h($z['nome']); ?>
+              </option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+      <?php endif; ?>
 
       <div class="col-12 col-md-4">
         <label class="form-label form-label-soft">Tipo</label>

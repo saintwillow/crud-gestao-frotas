@@ -4,12 +4,16 @@ exigir_gestor_ou_admin();
 
 $active = 'motoristas';
 require_once __DIR__ . "/../inc/database.php";
-require_once __DIR__ . "/../inc/header.php";
-
-function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 
 $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 if ($id <= 0) { header("Location: index.php"); exit; }
+
+// Proteção URL direta
+pode_ver_motorista($ligacao, $id);
+
+require_once __DIR__ . "/../inc/header.php";
+
+function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 
 $erros = [];
 
@@ -26,6 +30,13 @@ if (!$m) { header("Location: index.php"); exit; }
 // carregar valores
 $nome = $m['nome'] ?? '';
 $cc = $m['cc'] ?? '';
+$documento_tipo = 'Cartão de Cidadão';
+$documento_num = $cc;
+if ($cc !== '' && strpos($cc, ': ') !== false) {
+  $parts = explode(': ', $cc, 2);
+  $documento_tipo = $parts[0];
+  $documento_num = $parts[1];
+}
 $nif = $m['nif'] ?? '';
 $carta_numero = $m['carta_numero'] ?? '';
 $carta_categoria = $m['carta_categoria'] ?? '';
@@ -35,13 +46,20 @@ $email = $m['email'] ?? '';
 $status = $m['status'] ?? 'Ativo';
 $desde = $m['desde'] ?? '';
 $viagens = (string)($m['viagens'] ?? '0');
-$viatura_id = $m['viatura_id'] ?? '';
+$zona_operacional_id = $m['zona_operacional_id'] ?? '';
+
+// Carregar todas as zonas operacionais ativas para o select (se for admin ou gestor global)
+$zonas = [];
+$resZ = mysqli_query($ligacao, "SELECT id, nome FROM zonas_operacionais WHERE ativo=1 ORDER BY nome ASC");
+if ($resZ) while ($r = mysqli_fetch_assoc($resZ)) $zonas[] = $r;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-  $nome = trim($_POST['nome'] ?? '');
-  $cc = trim($_POST['cc'] ?? '');
-  $nif = trim($_POST['nif'] ?? '');
-  $carta_numero = trim($_POST['carta_numero'] ?? '');
+  $nome           = trim($_POST['nome'] ?? '');
+  $documento_tipo = trim($_POST['documento_tipo'] ?? 'Cartão de Cidadão');
+  $documento_num  = trim($_POST['documento_num'] ?? '');
+  $cc             = $documento_num !== '' ? ($documento_tipo . ': ' . $documento_num) : '';
+  $nif            = trim($_POST['nif'] ?? '');
+  $carta_numero   = trim($_POST['carta_numero'] ?? '');
   $carta_categoria = trim($_POST['carta_categoria'] ?? '');
   $carta_validade = $_POST['carta_validade'] ?? null;
   $telefone = trim($_POST['telefone'] ?? '');
@@ -51,17 +69,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $viagens_int = (int)($_POST['viagens'] ?? 0);
   if ($viagens_int < 0) $viagens_int = 0;
 
-  $viatura_id = $_POST['viatura_id'] ?? '';
-  $viatura_id_int = null;
-  if ($viatura_id !== '') {
-    $viatura_id_int = (int)$viatura_id;
-    if ($viatura_id_int <= 0) $viatura_id_int = null;
+  if (is_gestor_zona()) {
+    $zona_val = zona_id_sessao();
+  } else {
+    $zona_val = (isset($_POST['zona_operacional_id']) && $_POST['zona_operacional_id'] !== '') ? (int)$_POST['zona_operacional_id'] : null;
   }
 
   if ($nome === '') $erros[] = "O nome é obrigatório.";
 
-  if ($nif !== '' && !preg_match('/^\d{9}$/', preg_replace('/\D/', '', $nif))) {
-    $erros[] = "NIF inválido (deve ter 9 dígitos).";
+  if ($nif !== '' && !preg_match('/^\d{9}$/', $nif)) {
+    $erros[] = "NIF inválido (deve ter exatamente 9 dígitos).";
   }
 
   if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -72,51 +89,69 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $desde_db = ($desde !== '') ? $desde : null;
 
   if (count($erros) === 0) {
-    if ($viatura_id_int === null) {
+    mysqli_begin_transaction($ligacao);
+    try {
+      $colaborador_id = (int)($m['colaborador_id'] ?? 0);
+      if ($colaborador_id <= 0) {
+        $stmtCol = mysqli_prepare($ligacao,
+          "INSERT INTO colaboradores (nome, email, telefone, cargo, ativo)
+           VALUES (?, ?, ?, 'Motorista', 1)"
+        );
+        mysqli_stmt_bind_param($stmtCol, "sss", $nome, $email, $telefone);
+        if (!mysqli_stmt_execute($stmtCol)) {
+          throw new Exception("Erro ao criar colaborador correspondente.");
+        }
+        $colaborador_id = mysqli_insert_id($ligacao);
+        mysqli_stmt_close($stmtCol);
+
+        $stmtUpdCol = mysqli_prepare($ligacao, "UPDATE motoristas SET colaborador_id=? WHERE id=?");
+        mysqli_stmt_bind_param($stmtUpdCol, "ii", $colaborador_id, $id);
+        mysqli_stmt_execute($stmtUpdCol);
+        mysqli_stmt_close($stmtUpdCol);
+      } else {
+        $stmtCol = mysqli_prepare($ligacao,
+          "UPDATE colaboradores SET nome=?, email=?, telefone=? WHERE id=?"
+        );
+        mysqli_stmt_bind_param($stmtCol, "sssi", $nome, $email, $telefone, $colaborador_id);
+        if (!mysqli_stmt_execute($stmtCol)) {
+          throw new Exception("Erro ao atualizar colaborador correspondente.");
+        }
+        mysqli_stmt_close($stmtCol);
+      }
+
       $stmt = mysqli_prepare(
         $ligacao,
         "UPDATE motoristas
           SET nome=?, cc=?, nif=?, carta_numero=?, carta_categoria=?, carta_validade=?,
-              telefone=?, email=?, status=?, desde=?, viagens=?, viatura_id=NULL
-          WHERE id=?"
-      );
-      mysqli_stmt_bind_param(
-        $stmt,
-        "ssssssssssii",
-        $nome,$cc,$nif,$carta_numero,$carta_categoria,$carta_validade_db,
-        $telefone,$email,$status,$desde_db,$viagens_int,$id
-      );
-    } else {
-      $stmt = mysqli_prepare(
-        $ligacao,
-        "UPDATE motoristas
-          SET nome=?, cc=?, nif=?, carta_numero=?, carta_categoria=?, carta_validade=?,
-              telefone=?, email=?, status=?, desde=?, viagens=?, viatura_id=?
+              telefone=?, email=?, status=?, desde=?, viagens=?, zona_operacional_id=?
           WHERE id=?"
       );
       mysqli_stmt_bind_param(
         $stmt,
         "ssssssssssiii",
         $nome,$cc,$nif,$carta_numero,$carta_categoria,$carta_validade_db,
-        $telefone,$email,$status,$desde_db,$viagens_int,$viatura_id_int,$id
+        $telefone,$email,$status,$desde_db,$viagens_int,$zona_val,$id
       );
-    }
 
-    $ok = mysqli_stmt_execute($stmt);
-    if ($ok) {
+      if (!mysqli_stmt_execute($stmt)) {
+        throw new Exception("Erro ao atualizar motorista: " . mysqli_error($ligacao));
+      }
+      mysqli_stmt_close($stmt);
+
+      // Sincronizar zona do usuário operário ligado a este motorista se houver
+      if ($zona_val !== null) {
+        mysqli_query($ligacao, "UPDATE usuarios SET zona_operacional_id = $zona_val WHERE motorista_id = $id");
+      }
+
+      mysqli_commit($ligacao);
       header("Location: index.php?msg=editado");
       exit;
-    } else {
-      $erros[] = "Erro ao atualizar: " . mysqli_error($ligacao);
+    } catch (Exception $e) {
+      mysqli_rollback($ligacao);
+      $erros[] = $e->getMessage();
     }
-    mysqli_stmt_close($stmt);
   }
 }
-
-// lista viaturas p/ select
-$viaturas = [];
-$rV = mysqli_query($ligacao, "SELECT id, matricula, marca_modelo FROM viaturas ORDER BY matricula ASC");
-if ($rV) while ($row = mysqli_fetch_assoc($rV)) $viaturas[] = $row;
 ?>
 
 <div class="page-max-6xl space-y-6">
@@ -148,27 +183,50 @@ if ($rV) while ($row = mysqli_fetch_assoc($rV)) $viaturas[] = $row;
 
       <div class="col-12 col-md-6">
         <label class="form-label form-label-soft">Nome *</label>
-        <input class="form-control" name="nome" value="<?php echo h($nome); ?>" required>
+        <input class="form-control" name="nome" value="<?php echo h($nome); ?>" maxlength="120" required>
       </div>
 
       <div class="col-12 col-md-3">
         <label class="form-label form-label-soft">NIF</label>
-        <input class="form-control" name="nif" value="<?php echo h($nif); ?>" placeholder="9 dígitos">
+        <input class="form-control" name="nif" value="<?php echo h($nif); ?>" placeholder="9 dígitos" maxlength="9" pattern="\d{9}" oninput="this.value = this.value.replace(/[^0-9]/g, '')">
+      </div>
+
+      <?php if (!is_gestor_zona()): ?>
+        <div class="col-12 col-md-3">
+          <label class="form-label form-label-soft">Zona Operacional</label>
+          <select class="form-select" name="zona_operacional_id" required>
+            <option value="">Selecione uma zona...</option>
+            <?php foreach ($zonas as $z): ?>
+              <option value="<?php echo (int)$z['id']; ?>" <?php echo ($zona_operacional_id == $z['id']) ? 'selected' : ''; ?>>
+                <?php echo h($z['nome']); ?>
+              </option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+      <?php endif; ?>
+
+      <div class="col-12 col-md-3">
+        <label class="form-label form-label-soft">Tipo de Documento</label>
+        <select class="form-select" name="documento_tipo">
+          <option value="Cartão de Cidadão" <?php echo ($documento_tipo === 'Cartão de Cidadão') ? 'selected' : ''; ?>>Cartão de Cidadão</option>
+          <option value="Autorização de Residência" <?php echo ($documento_tipo === 'Autorização de Residência') ? 'selected' : ''; ?>>Autorização de Residência</option>
+          <option value="Passaporte" <?php echo ($documento_tipo === 'Passaporte') ? 'selected' : ''; ?>>Passaporte</option>
+        </select>
       </div>
 
       <div class="col-12 col-md-3">
-        <label class="form-label form-label-soft">Cartão de Cidadão (CC)</label>
-        <input class="form-control" name="cc" value="<?php echo h($cc); ?>">
+        <label class="form-label form-label-soft">Nº Documento</label>
+        <input class="form-control" name="documento_num" value="<?php echo h($documento_num); ?>" maxlength="20" placeholder="Insira o número do documento">
       </div>
 
-      <div class="col-12 col-md-4">
+      <div class="col-12 col-md-3">
         <label class="form-label form-label-soft">Carta (nº)</label>
-        <input class="form-control" name="carta_numero" value="<?php echo h($carta_numero); ?>">
+        <input class="form-control" name="carta_numero" value="<?php echo h($carta_numero); ?>" maxlength="30">
       </div>
 
-      <div class="col-12 col-md-4">
+      <div class="col-12 col-md-3">
         <label class="form-label form-label-soft">Categoria</label>
-        <input class="form-control" name="carta_categoria" value="<?php echo h($carta_categoria); ?>" placeholder="ex.: B, C, C+E">
+        <input class="form-control" name="carta_categoria" value="<?php echo h($carta_categoria); ?>" placeholder="ex.: B, C, C+E" maxlength="10">
       </div>
 
       <div class="col-12 col-md-4">
@@ -178,12 +236,12 @@ if ($rV) while ($row = mysqli_fetch_assoc($rV)) $viaturas[] = $row;
 
       <div class="col-12 col-md-4">
         <label class="form-label form-label-soft">Telefone</label>
-        <input class="form-control" name="telefone" value="<?php echo h($telefone); ?>">
+        <input class="form-control" name="telefone" value="<?php echo h($telefone); ?>" maxlength="30">
       </div>
 
       <div class="col-12 col-md-4">
         <label class="form-label form-label-soft">E-mail</label>
-        <input class="form-control" name="email" value="<?php echo h($email); ?>">
+        <input class="form-control" name="email" value="<?php echo h($email); ?>" maxlength="120">
       </div>
 
       <div class="col-12 col-md-2">
@@ -199,21 +257,15 @@ if ($rV) while ($row = mysqli_fetch_assoc($rV)) $viaturas[] = $row;
         </select>
       </div>
 
-      <div class="col-12 col-md-6">
-        <label class="form-label form-label-soft">Viatura atribuída</label>
-        <select class="form-select" name="viatura_id">
-          <option value="">Sem viatura</option>
-          <?php foreach ($viaturas as $v): ?>
-            <option value="<?php echo (int)$v['id']; ?>" <?php echo ((string)$viatura_id === (string)$v['id'])?'selected':''; ?>>
-              <?php echo h($v['matricula'] . " — " . $v['marca_modelo']); ?>
-            </option>
-          <?php endforeach; ?>
-        </select>
-      </div>
-
-      <div class="col-12 col-md-6">
+      <div class="col-12 col-md-8">
         <label class="form-label form-label-soft">Desde</label>
         <input class="form-control" type="date" name="desde" value="<?php echo h($desde); ?>">
+      </div>
+
+      <div class="col-12 col-md-12 d-flex align-items-center my-3">
+        <div class="alert alert-info w-100 mb-0 small py-2 px-3">
+          <i class="bi bi-info-circle me-1"></i> A atribuição de viatura é gerida no módulo <a href="../atribuicoes/index.php" class="alert-link fw-semibold">Atribuições</a>.
+        </div>
       </div>
 
       <div class="col-12 d-flex gap-2">

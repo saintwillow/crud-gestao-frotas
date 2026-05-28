@@ -54,10 +54,12 @@ $combustivel = trim($_GET['combustivel'] ?? '');
 $sub_regiao = trim($_GET['sub_regiao'] ?? '');
 
 // KPIs
-$total = fetchOneInt($ligacao, "SELECT COUNT(*) AS total FROM viaturas");
-$disponiveis = fetchOneInt($ligacao, "SELECT COUNT(*) AS total FROM viaturas WHERE estado='Disponível'");
-$atribuida = fetchOneInt($ligacao, "SELECT COUNT(*) AS total FROM viaturas WHERE estado='Atribuída'");
-$manutencao = fetchOneInt($ligacao, "SELECT COUNT(*) AS total FROM viaturas WHERE estado='Em Manutenção'");
+$filtro_zona_kpi = sql_filtro_zona_viatura("v");
+$where_kpi = "1=1" . $filtro_zona_kpi;
+$total = fetchOneInt($ligacao, "SELECT COUNT(*) AS total FROM viaturas v WHERE $where_kpi");
+$disponiveis = fetchOneInt($ligacao, "SELECT COUNT(*) AS total FROM viaturas v WHERE v.estado='Disponível'" . $filtro_zona_kpi);
+$atribuida = fetchOneInt($ligacao, "SELECT COUNT(*) AS total FROM viaturas v WHERE v.estado='Atribuída'" . $filtro_zona_kpi);
+$manutencao = fetchOneInt($ligacao, "SELECT COUNT(*) AS total FROM viaturas v WHERE v.estado='Em Manutenção'" . $filtro_zona_kpi);
 
 // sub-regiões para filtro
 $subRegioes = [];
@@ -79,6 +81,10 @@ elseif ($msg === 'apagada') $alerta = 'Veículo apagado com sucesso.';
 
 // WHERE dinâmico
 $where = ["1=1"];
+$filtro_zona = sql_filtro_zona_viatura("v");
+if ($filtro_zona !== "") {
+  $where[] = substr($filtro_zona, 5); // remove leading " AND "
+}
 
 if ($q !== '') {
   $qSafe = mysqli_real_escape_string($ligacao, $q);
@@ -124,9 +130,11 @@ $sql = "
     i.tipo AS infraestrutura_tipo,
     i.sub_regiao AS infraestrutura_sub_regiao,
     i.localidade AS infraestrutura_localidade,
-    i.concelho AS infraestrutura_concelho
+    i.concelho AS infraestrutura_concelho,
+    zo.nome AS zona_nome
   FROM viaturas v
   LEFT JOIN infraestruturas i ON i.id = v.infraestrutura_id
+  LEFT JOIN zonas_operacionais zo ON zo.id = v.zona_operacional_id
   WHERE $whereSql
   ORDER BY v.id DESC
 ";
@@ -374,11 +382,7 @@ $res = mysqli_query($ligacao, $sql);
     </div>
   </div>
 
-  <?php if ($alerta !== ''): ?>
-    <div class="alert alert-<?php echo h($alertaTipo); ?> mb-0">
-      <?php echo h($alerta); ?>
-    </div>
-  <?php endif; ?>
+
 
   <div class="row g-3">
     <div class="col-12 col-sm-6 col-lg-3">
@@ -501,7 +505,10 @@ $res = mysqli_query($ligacao, $sql);
           <div class="vehicle-card">
             <div class="vehicle-card-top">
               <div>
-                <div class="vehicle-plate"><?php echo h($v['matricula'] ?? ''); ?></div>
+                <div class="vehicle-plate d-flex align-items-center gap-2">
+                  <span><?php echo h($v['matricula'] ?? ''); ?></span>
+                  <span class="badge bg-light text-primary border" style="font-size: 11px;"><?php echo h($v['zona_nome'] ?: 'Geral / Sem Zona'); ?></span>
+                </div>
                 <div class="vehicle-name"><?php echo h($v['marca_modelo'] ?? ''); ?></div>
               </div>
 

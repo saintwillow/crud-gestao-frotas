@@ -8,9 +8,27 @@ require_once __DIR__ . "/inc/header.php";
 
 function h($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 
+// ── Filtros por zona operacional (gestor restrito ou operário) ────────────────────────
+$filtro_base_viaturas = "";
+$filtro_base_subquery = "";
+$filtro_base_v_prefix = "";
+$filtro_base_m_prefix = "";
+
+$filtro_zona_v = sql_filtro_zona_viatura("v");
+if ($filtro_zona_v !== "") {
+  $filtro_base_viaturas = " WHERE " . substr($filtro_zona_v, 5);
+  $filtro_base_subquery = " AND viatura_id IN (SELECT id FROM viaturas v WHERE 1=1 {$filtro_zona_v})";
+  $filtro_base_v_prefix = $filtro_zona_v;
+}
+
+$filtro_zona_m = sql_filtro_zona_motorista("m");
+if ($filtro_zona_m !== "") {
+  $filtro_base_m_prefix = $filtro_zona_m;
+}
+
 // ── KPIs de viaturas ──────────────────────────────────────────────────────
 $totalVeiculos = 0; $emManutencao = 0; $ativos = 0; $inativos = 0;
-$r = mysqli_query($ligacao, "SELECT estado, COUNT(*) AS n FROM viaturas GROUP BY estado");
+$r = mysqli_query($ligacao, "SELECT estado, COUNT(*) AS n FROM viaturas v {$filtro_base_viaturas} GROUP BY estado");
 if ($r) while ($row = mysqli_fetch_assoc($r)) {
   $totalVeiculos += (int)$row['n'];
   $e = $row['estado'];
@@ -23,21 +41,22 @@ if ($r) while ($row = mysqli_fetch_assoc($r)) {
 $mesAtual = date('Y-m');
 $r = mysqli_query($ligacao,
   "SELECT COALESCE(SUM(custo),0) AS total FROM manutencoes
-   WHERE DATE_FORMAT(data_inicio,'%Y-%m')='$mesAtual'"
+   WHERE DATE_FORMAT(data_inicio,'%Y-%m')='$mesAtual' {$filtro_base_subquery}"
 );
 $custoManutencao = $r ? (float)(mysqli_fetch_assoc($r)['total'] ?? 0) : 0;
 
 $r = mysqli_query($ligacao,
   "SELECT COALESCE(SUM(total),0) AS total FROM abastecimentos
-   WHERE DATE_FORMAT(data_abastecimento,'%Y-%m')='$mesAtual'"
+   WHERE DATE_FORMAT(data_abastecimento,'%Y-%m')='$mesAtual' {$filtro_base_subquery}"
 );
 $custoCombustivel = $r ? (float)(mysqli_fetch_assoc($r)['total'] ?? 0) : 0;
 $custoMensal = $custoManutencao + $custoCombustivel;
 
 // ── Preço médio por litro este mês (substitui "combustível médio 58%") ────
 $r = mysqli_query($ligacao,
-  "SELECT COALESCE(AVG(preco_litro),0) AS media FROM abastecimentos
-   WHERE DATE_FORMAT(data_abastecimento,'%Y-%m')='$mesAtual'"
+  "SELECT COALESCE(SUM(total) / NULLIF(SUM(litros), 0), 0) AS media FROM abastecimentos
+   WHERE estado != 'anulado'
+     AND DATE_FORMAT(data_abastecimento,'%Y-%m')='$mesAtual' {$filtro_base_subquery}"
 );
 $precoMedioLitro = $r ? (float)(mysqli_fetch_assoc($r)['media'] ?? 0) : 0;
 
@@ -52,7 +71,7 @@ for ($i = 5; $i >= 0; $i--) {
 
   $r = mysqli_query($ligacao,
     "SELECT COALESCE(SUM(total),0) AS total FROM abastecimentos
-     WHERE DATE_FORMAT(data_abastecimento,'%Y-%m')='$mes'"
+     WHERE DATE_FORMAT(data_abastecimento,'%Y-%m')='$mes' {$filtro_base_subquery}"
   );
   $val = $r ? (float)(mysqli_fetch_assoc($r)['total'] ?? 0) : 0;
   $fuelData[] = ['month' => $label, 'value' => round($val, 2)];
@@ -70,7 +89,9 @@ $recentRes = mysqli_query($ligacao,
   "SELECT v.id, v.matricula, v.marca_modelo, v.estado,
           m.nome AS motorista_nome
    FROM viaturas v
-   LEFT JOIN motoristas m ON m.viatura_id = v.id AND m.status='Ativo'
+   LEFT JOIN atribuicoes a ON a.viatura_id = v.id AND a.estado = 'aberta'
+   LEFT JOIN motoristas m ON m.id = a.motorista_id AND m.status='Ativo'
+   WHERE 1=1 {$filtro_base_v_prefix}
    ORDER BY v.id DESC LIMIT 5"
 );
 
@@ -80,25 +101,60 @@ $manRes = mysqli_query($ligacao,
   "SELECT m.id, m.descricao, m.data_inicio, m.custo, m.status, v.matricula
    FROM manutencoes m
    LEFT JOIN viaturas v ON v.id = m.viatura_id
-   WHERE m.status IN ('Agendada','Em andamento','Pendente')
+   WHERE m.status IN ('Agendada','Em andamento','Pendente') {$filtro_base_v_prefix}
    ORDER BY m.data_inicio ASC LIMIT 5"
 );
 if ($manRes) while ($row = mysqli_fetch_assoc($manRes)) $upcoming[] = $row;
 
-// ── Alertas: cartas de condução a vencer nos próximos 60 dias ────────────
+// ── Alertas: cartas de condução a vencer ───────────────────────────────────
+$sys_settings = get_configuracoes_sistema();
+$dias_limite = (int)($sys_settings['alerta_carta_dias'] ?? 60);
 $alertasCarta = [];
 $hoje = date('Y-m-d');
-$limite60 = date('Y-m-d', strtotime('+60 days'));
+$limite60 = date('Y-m-d', strtotime("+{$dias_limite} days"));
 $alertaRes = mysqli_query($ligacao,
-  "SELECT nome, carta_categoria, carta_validade,
-          DATEDIFF(carta_validade, CURDATE()) AS dias_restantes
-   FROM motoristas
-   WHERE status='Ativo'
-     AND carta_validade IS NOT NULL
-     AND carta_validade <= '$limite60'
-   ORDER BY carta_validade ASC"
+  "SELECT m.nome, m.carta_categoria, m.carta_validade,
+          DATEDIFF(m.carta_validade, CURDATE()) AS dias_restantes
+   FROM motoristas m
+   WHERE m.status='Ativo'
+     AND m.carta_validade IS NOT NULL
+     AND m.carta_validade <= '$limite60' {$filtro_base_m_prefix}
+   ORDER BY m.carta_validade ASC"
 );
 if ($alertaRes) while ($row = mysqli_fetch_assoc($alertaRes)) $alertasCarta[] = $row;
+
+// ── Alertas: Ocorrências críticas/altas ativas ─────────────────────────────
+$alertasOcorrencias = [];
+$ocRes = mysqli_query($ligacao,
+  "SELECT o.id, o.codigo, o.titulo, o.gravidade, v.matricula
+   FROM ocorrencias o
+   LEFT JOIN viaturas v ON v.id = o.viatura_id
+   WHERE o.gravidade IN ('alta','critica') AND o.estado IN ('aberta','em_analise') {$filtro_base_v_prefix}
+   ORDER BY o.criado_em DESC LIMIT 5"
+);
+if ($ocRes) while ($row = mysqli_fetch_assoc($ocRes)) $alertasOcorrencias[] = $row;
+
+$zonasComp = [];
+if (is_admin() || is_gestor_global()) {
+  $resComp = mysqli_query($ligacao, "
+    SELECT 
+      zo.id,
+      zo.nome,
+      zo.cor,
+      (SELECT COUNT(*) FROM viaturas WHERE zona_operacional_id = zo.id) AS total_viaturas,
+      (SELECT COUNT(*) FROM viaturas WHERE zona_operacional_id = zo.id AND estado = 'Em Manutenção') AS em_manutencao,
+      (SELECT COUNT(*) FROM ocorrencias o JOIN viaturas v ON v.id = o.viatura_id WHERE v.zona_operacional_id = zo.id AND o.estado IN ('aberta','em_analise')) AS ocorrencias_ativas,
+      (SELECT COALESCE(SUM(ab.total), 0) FROM abastecimentos ab JOIN viaturas v ON v.id = ab.viatura_id WHERE v.zona_operacional_id = zo.id AND ab.estado <> 'anulado' AND DATE_FORMAT(ab.data_abastecimento,'%Y-%m')='$mesAtual') AS custo_combustivel
+    FROM zonas_operacionais zo
+    WHERE zo.ativo = 1
+    ORDER BY zo.nome ASC
+  ");
+  if ($resComp) {
+    while ($r = mysqli_fetch_assoc($resComp)) {
+      $zonasComp[] = $r;
+    }
+  }
+}
 
 function badgeEstadoDashboard($estado) {
   $estado = trim((string)$estado);
@@ -112,33 +168,29 @@ function badgeEstadoDashboard($estado) {
 
 <!-- Cabeçalho -->
 <div class="mb-4">
-  <h1 class="page-title">Painel de Controle</h1>
+  <h1 class="page-title" style="font-size: 30px; font-weight: 800;">Painel de Controle</h1>
   <div class="page-subtitle">Visão geral da frota — AquaFleet</div>
 </div>
 
-<?php if (count($alertasCarta) > 0): ?>
-<!-- Faixa de alertas de carta -->
-<div class="glass-card p-3 mb-4" style="border-left: 3px solid hsl(38,92%,50%);">
+<?php if (count($alertasOcorrencias) > 0): ?>
+<!-- Faixa de alertas de ocorrências críticas -->
+<div class="glass-card p-3 mb-4" style="border-left: 3px solid hsl(0, 72%, 51%);">
   <div class="d-flex align-items-center gap-2 mb-2">
-    <i class="bi bi-exclamation-triangle-fill" style="color:hsl(38,92%,50%);"></i>
-    <strong class="small">Cartas de condução a vencer nos próximos 60 dias</strong>
+    <i class="bi bi-exclamation-octagon-fill text-danger"></i>
+    <strong class="small text-danger">Ocorrências Críticas / Altas Ativas</strong>
   </div>
   <div class="vstack gap-2">
-    <?php foreach ($alertasCarta as $a): ?>
-      <?php
-        $dias = (int)$a['dias_restantes'];
-        $cor  = $dias <= 0 ? 'badge-danger-soft' : ($dias <= 15 ? 'badge-warning-soft' : 'badge-info-soft');
-        $txt  = $dias <= 0 ? 'Expirada' : "Vence em {$dias}d";
-      ?>
+    <?php foreach ($alertasOcorrencias as $oc): ?>
       <div class="d-flex align-items-center justify-content-between gap-2 small">
         <div>
-          <span class="fw-semibold"><?php echo h($a['nome']); ?></span>
-          <span class="text-muted ms-2">Carta <?php echo h($a['carta_categoria'] ?? '—'); ?></span>
+          <a href="ocorrencias/show.php?id=<?php echo (int)$oc['id']; ?>" class="fw-semibold text-danger text-decoration-none">
+            <?php echo h($oc['codigo'] . " - " . $oc['titulo']); ?>
+          </a>
+          <span class="text-muted ms-2">Viatura: <?php echo h($oc['matricula'] ?? 'Sem Viatura'); ?></span>
         </div>
-        <div class="d-flex align-items-center gap-2">
-          <span class="text-muted"><?php echo h($a['carta_validade']); ?></span>
-          <span class="badge-pill <?php echo $cor; ?>"><?php echo $txt; ?></span>
-        </div>
+        <span class="badge-pill bg-danger bg-opacity-25 text-danger border border-danger border-opacity-25 text-uppercase" style="font-size: 10px; padding: 2px 6px;">
+          <?php echo h($oc['gravidade']); ?>
+        </span>
       </div>
     <?php endforeach; ?>
   </div>
@@ -236,6 +288,57 @@ function badgeEstadoDashboard($estado) {
   </div>
 </div>
 
+<?php if (count($zonasComp) > 0): ?>
+<!-- Bloco de Comparação de Zonas Operacionais -->
+<div class="glass-card p-4 mb-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h3 class="section-title mb-0"><i class="bi bi-globe me-2 text-primary"></i>Comparativo Operacional entre Zonas</h3>
+    <span class="badge bg-primary bg-opacity-10 text-primary">Mês Corrente</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0" style="color: inherit; border-color: rgba(226, 232, 240, 0.05);">
+      <thead>
+        <tr class="text-muted small text-uppercase" style="border-bottom: 2px solid rgba(226, 232, 240, 0.1);">
+          <th style="padding: 12px 8px; border-bottom: none;">Zona Operacional</th>
+          <th class="text-center" style="padding: 12px 8px; border-bottom: none;">Total Viaturas</th>
+          <th class="text-center" style="padding: 12px 8px; border-bottom: none;">Em Manutenção</th>
+          <th class="text-center" style="padding: 12px 8px; border-bottom: none;">Ocorrências Ativas</th>
+          <th class="text-end" style="padding: 12px 8px; border-bottom: none;">Combustível (Mês)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <?php foreach ($zonasComp as $zc): ?>
+          <tr style="border-bottom: 1px solid rgba(226, 232, 240, 0.05);">
+            <td style="padding: 14px 8px; border-bottom: none;">
+              <span class="legend-dot me-2" style="background:<?php echo h($zc['cor']); ?>; display: inline-block; width: 10px; height: 10px; border-radius: 50%;"></span>
+              <strong class="text-light"><?php echo h($zc['nome']); ?></strong>
+            </td>
+            <td class="text-center text-light" style="padding: 14px 8px; border-bottom: none;"><?php echo (int)$zc['total_viaturas']; ?></td>
+            <td class="text-center text-light" style="padding: 14px 8px; border-bottom: none;">
+              <?php if ($zc['em_manutencao'] > 0): ?>
+                <span class="badge bg-warning text-dark fw-bold"><?php echo (int)$zc['em_manutencao']; ?></span>
+              <?php else: ?>
+                <span class="text-muted">—</span>
+              <?php endif; ?>
+            </td>
+            <td class="text-center text-light" style="padding: 14px 8px; border-bottom: none;">
+              <?php if ($zc['ocorrencias_ativas'] > 0): ?>
+                <span class="badge bg-danger text-light fw-bold"><?php echo (int)$zc['ocorrencias_ativas']; ?></span>
+              <?php else: ?>
+                <span class="text-muted">—</span>
+              <?php endif; ?>
+            </td>
+            <td class="text-end text-light fw-bold" style="padding: 14px 8px; border-bottom: none;">
+              € <?php echo number_format((float)$zc['custo_combustivel'], 2, ',', '.'); ?>
+            </td>
+          </tr>
+        <?php endforeach; ?>
+      </tbody>
+    </table>
+  </div>
+</div>
+<?php endif; ?>
+
 <!-- Listas -->
 <div class="row g-3">
   <div class="col-12 col-lg-6">
@@ -303,6 +406,35 @@ function badgeEstadoDashboard($estado) {
     </div>
   </div>
 </div>
+
+<?php if (count($alertasCarta) > 0): ?>
+<!-- Faixa de alertas de carta -->
+<div class="glass-card p-3 mt-4" style="border-left: 3px solid hsl(38,92%,50%);">
+  <div class="d-flex align-items-center gap-2 mb-2">
+    <i class="bi bi-exclamation-triangle-fill" style="color:hsl(38,92%,50%);"></i>
+    <strong class="small">Cartas de condução a vencer nos próximos <?php echo $dias_limite; ?> dias</strong>
+  </div>
+  <div class="vstack gap-2">
+    <?php foreach ($alertasCarta as $a): ?>
+      <?php
+        $dias = (int)$a['dias_restantes'];
+        $cor  = $dias <= 0 ? 'badge-danger-soft' : ($dias <= 15 ? 'badge-warning-soft' : 'badge-info-soft');
+        $txt  = $dias <= 0 ? 'Expirada' : "Vence em {$dias}d";
+      ?>
+      <div class="d-flex align-items-center justify-content-between gap-2 small">
+        <div>
+          <span class="fw-semibold"><?php echo h($a['nome']); ?></span>
+          <span class="text-muted ms-2">Carta <?php echo h($a['carta_categoria'] ?? '—'); ?></span>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+          <span class="text-muted"><?php echo h($a['carta_validade']); ?></span>
+          <span class="badge-pill <?php echo $cor; ?>"><?php echo $txt; ?></span>
+        </div>
+      </div>
+    <?php endforeach; ?>
+  </div>
+</div>
+<?php endif; ?>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>

@@ -72,6 +72,11 @@ if ($gravidadeFiltro !== '') {
   $where[] = "o.gravidade = '$gravidade_safe'";
 }
 
+$filtro_zona = sql_filtro_zona_ocorrencia("o");
+if ($filtro_zona !== "") {
+  $where[] = substr($filtro_zona, 5); // remove leading " AND "
+}
+
 // KPIs
 function fetchOneInt($ligacao, $sql) {
   $r = mysqli_query($ligacao, $sql);
@@ -80,10 +85,11 @@ function fetchOneInt($ligacao, $sql) {
   return (int)($row['n'] ?? 0);
 }
 
-$kpiTotal = fetchOneInt($ligacao, "SELECT COUNT(*) AS n FROM ocorrencias");
-$kpiPendentes = fetchOneInt($ligacao, "SELECT COUNT(*) AS n FROM ocorrencias WHERE estado IN ('aberta', 'em_analise')");
-$kpiCriticas = fetchOneInt($ligacao, "SELECT COUNT(*) AS n FROM ocorrencias WHERE gravidade IN ('alta', 'critica') AND estado <> 'resolvida'");
-$kpiResolvidas = fetchOneInt($ligacao, "SELECT COUNT(*) AS n FROM ocorrencias WHERE estado = 'resolvida'");
+$filtro_zona_kpi = sql_filtro_zona_ocorrencia("o");
+$kpiTotal = fetchOneInt($ligacao, "SELECT COUNT(*) AS n FROM ocorrencias o WHERE 1=1{$filtro_zona_kpi}");
+$kpiPendentes = fetchOneInt($ligacao, "SELECT COUNT(*) AS n FROM ocorrencias o WHERE o.estado IN ('aberta', 'em_analise'){$filtro_zona_kpi}");
+$kpiCriticas = fetchOneInt($ligacao, "SELECT COUNT(*) AS n FROM ocorrencias o WHERE o.gravidade IN ('alta', 'critica') AND o.estado <> 'resolvida'{$filtro_zona_kpi}");
+$kpiResolvidas = fetchOneInt($ligacao, "SELECT COUNT(*) AS n FROM ocorrencias o WHERE o.estado = 'resolvida'{$filtro_zona_kpi}");
 
 // Consulta Principal
 $sql = "
@@ -134,11 +140,7 @@ $msg = $_GET['msg'] ?? '';
     </div>
   </div>
 
-  <?php if ($msg === 'tratada'): ?>
-    <div class="alert alert-success py-2 px-3 mb-0">Ocorrência tratada com sucesso.</div>
-  <?php elseif ($msg === 'manutencao'): ?>
-    <div class="alert alert-success py-2 px-3 mb-0">Ocorrência convertida em manutenção com sucesso. A viatura foi bloqueada.</div>
-  <?php endif; ?>
+
 
   <!-- KPIs -->
   <div class="row g-3">

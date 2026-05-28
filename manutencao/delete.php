@@ -11,7 +11,9 @@ function h($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 $id = (int)($_GET['id'] ?? 0);
 if ($id <= 0) { header("Location: index.php"); exit; }
 
-$stmt = mysqli_prepare($ligacao, "SELECT id, descricao FROM manutencoes WHERE id=? LIMIT 1");
+pode_ver_manutencao($ligacao, $id);
+
+$stmt = mysqli_prepare($ligacao, "SELECT id, descricao, viatura_id FROM manutencoes WHERE id=? LIMIT 1");
 mysqli_stmt_bind_param($stmt, "i", $id);
 mysqli_stmt_execute($stmt);
 $res = mysqli_stmt_get_result($stmt);
@@ -26,10 +28,12 @@ if (!$m) {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   if (($_POST['confirm'] ?? '') === 'yes') {
+    $vid = (int)$m['viatura_id'];
     $del = mysqli_prepare($ligacao, "DELETE FROM manutencoes WHERE id=?");
     mysqli_stmt_bind_param($del, "i", $id);
     mysqli_stmt_execute($del);
     mysqli_stmt_close($del);
+    recalcular_estado_viatura($ligacao, $vid);
     header("Location: index.php?msg=apagada");
     exit;
   }

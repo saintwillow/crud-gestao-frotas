@@ -39,16 +39,18 @@ $kpiConc = 0;
 $rows = [];
 
 /* KPIs */
-$r1 = mysqli_query($ligacao, "SELECT COUNT(*) AS t FROM manutencoes");
+$filtro_zona = sql_filtro_zona_manutencao("m");
+
+$r1 = mysqli_query($ligacao, "SELECT COUNT(*) AS t FROM manutencoes m WHERE 1=1{$filtro_zona}");
 if ($r1) $kpiTotal = (int)(mysqli_fetch_assoc($r1)['t'] ?? 0);
 
-$r2 = mysqli_query($ligacao, "SELECT COUNT(*) AS t FROM manutencoes WHERE status IN ('Agendada','Pendente','scheduled')");
+$r2 = mysqli_query($ligacao, "SELECT COUNT(*) AS t FROM manutencoes m WHERE status IN ('Agendada','Pendente','scheduled'){$filtro_zona}");
 if ($r2) $kpiAg = (int)(mysqli_fetch_assoc($r2)['t'] ?? 0);
 
-$r3 = mysqli_query($ligacao, "SELECT COUNT(*) AS t FROM manutencoes WHERE status IN ('Em andamento','in-progress')");
+$r3 = mysqli_query($ligacao, "SELECT COUNT(*) AS t FROM manutencoes m WHERE status IN ('Em andamento','in-progress'){$filtro_zona}");
 if ($r3) $kpiAnd = (int)(mysqli_fetch_assoc($r3)['t'] ?? 0);
 
-$r4 = mysqli_query($ligacao, "SELECT COUNT(*) AS t FROM manutencoes WHERE status IN ('Concluída','Concluida','Concluído','Concluido')");
+$r4 = mysqli_query($ligacao, "SELECT COUNT(*) AS t FROM manutencoes m WHERE status IN ('Concluída','Concluida','Concluído','Concluido'){$filtro_zona}");
 if ($r4) $kpiConc = (int)(mysqli_fetch_assoc($r4)['t'] ?? 0);
 
 /* Query principal */
@@ -64,6 +66,9 @@ if ($status !== '') {
 if ($tipo !== '') {
   $tipo_safe = mysqli_real_escape_string($ligacao, $tipo);
   $where[] = "m.tipo = '$tipo_safe'";
+}
+if ($filtro_zona !== "") {
+  $where[] = substr($filtro_zona, 5);
 }
 
 $sql = "SELECT 
@@ -87,16 +92,6 @@ if ($res) while ($row = mysqli_fetch_assoc($res)) $rows[] = $row;
     </div>
 
     <div class="d-flex align-items-center gap-2 flex-wrap">
-      <?php if (isset($_GET['msg'])): ?>
-        <?php if ($_GET['msg'] === 'criada'): ?>
-          <div class="alert alert-success py-2 px-3 mb-0">Manutenção criada </div>
-        <?php elseif ($_GET['msg'] === 'editada'): ?>
-          <div class="alert alert-success py-2 px-3 mb-0">Manutenção atualizada </div>
-        <?php elseif ($_GET['msg'] === 'apagada'): ?>
-          <div class="alert alert-success py-2 px-3 mb-0">Manutenção apagada </div>
-        <?php endif; ?>
-      <?php endif; ?>
-
       <?php if (in_array(perfil_atual(), ['admin', 'gestor'], true)): ?>
         <a href="create.php" class="btn btn-primary">Nova Manutenção</a>
       <?php endif; ?>
@@ -187,7 +182,7 @@ if ($res) while ($row = mysqli_fetch_assoc($res)) $rows[] = $row;
 
         <select class="form-select" name="tipo" style="min-width: 170px;">
           <option value="">Tipo</option>
-          <?php foreach (['Preventiva','Corretiva','Revisão','Outro'] as $t): ?>
+          <?php foreach (['Preventiva','Corretiva','Inspeção','Pneus','Óleo','Outro'] as $t): ?>
             <option value="<?php echo h($t); ?>" <?php echo ($tipo===$t)?'selected':''; ?>>
               <?php echo h($t); ?>
             </option>

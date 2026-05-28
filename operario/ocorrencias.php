@@ -147,9 +147,7 @@ $msg = $_GET['msg'] ?? '';
   </div>
 </div>
 
-<?php if ($msg === 'criada'): ?>
-  <div class="alert alert-success mb-4">Ocorrência reportada com sucesso. A equipa de gestão foi notificada.</div>
-<?php endif; ?>
+
 
 <?php if (!$atribuicao): ?>
   <div class="glass-card p-4 text-center text-muted mb-4">

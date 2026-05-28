@@ -4,12 +4,16 @@ exigir_gestor_ou_admin();
 
 $active = 'viaturas';
 require_once __DIR__ . "/../inc/database.php";
-require_once __DIR__ . "/../inc/header.php";
-
-function h($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 
 $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 if ($id <= 0) { header("Location: index.php"); exit; }
+
+// Validar permissão por zona operacional
+pode_ver_viatura($ligacao, $id);
+
+require_once __DIR__ . "/../inc/header.php";
+
+function h($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 
 // Buscar viatura com prepared statement
 $stmt = mysqli_prepare($ligacao, "SELECT * FROM viaturas WHERE id=? LIMIT 1");
@@ -26,8 +30,19 @@ if (!$veiculo) {
 }
 
 $infraestruturas = [];
-$resI = mysqli_query($ligacao, "SELECT id, nome, tipo, sub_regiao FROM infraestruturas WHERE ativo=1 ORDER BY sub_regiao ASC, tipo ASC, nome ASC");
+// Filtrar infraestruturas pela zona do gestor se for gestor de zona
+$whereInfra = "ativo=1";
+if (is_gestor_zona()) {
+  $zid = (int)zona_id_sessao();
+  $whereInfra .= " AND (zona_operacional_id = $zid OR zona_operacional_id IS NULL)";
+}
+$resI = mysqli_query($ligacao, "SELECT id, nome, tipo, sub_regiao FROM infraestruturas WHERE $whereInfra ORDER BY sub_regiao ASC, tipo ASC, nome ASC");
 if ($resI) while ($r = mysqli_fetch_assoc($resI)) $infraestruturas[] = $r;
+
+// Carregar zonas
+$zonas = [];
+$resZ = mysqli_query($ligacao, "SELECT id, nome FROM zonas_operacionais WHERE ativo=1 ORDER BY nome ASC");
+if ($resZ) while ($r = mysqli_fetch_assoc($resZ)) $zonas[] = $r;
 
 $erros = [];
 $matricula       = $veiculo['matricula'] ?? '';
@@ -38,6 +53,7 @@ $quilometragem   = (string)($veiculo['quilometragem'] ?? '');
 $estado          = $veiculo['estado'] ?? 'Disponível';
 $observacoes     = $veiculo['observacoes'] ?? '';
 $infraestrutura_id = (string)($veiculo['infraestrutura_id'] ?? '');
+$zona_operacional_id = $veiculo['zona_operacional_id'] ?? '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $matricula       = trim($_POST['matricula'] ?? '');
@@ -48,6 +64,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $estado          = trim($_POST['estado'] ?? 'Disponível');
   $observacoes     = trim($_POST['observacoes'] ?? '');
   $infraestrutura_id = trim($_POST['infraestrutura_id'] ?? '');
+
+  if (is_gestor_zona()) {
+    $zona_val = zona_id_sessao();
+  } else {
+    $zona_val = (isset($_POST['zona_operacional_id']) && $_POST['zona_operacional_id'] !== '') ? (int)$_POST['zona_operacional_id'] : null;
+  }
 
   if ($matricula === '')    $erros[] = "A matrícula é obrigatória.";
   if ($marca_modelo === '') $erros[] = "A marca/modelo é obrigatória.";
@@ -61,10 +83,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $stmt = mysqli_prepare($ligacao,
       "UPDATE viaturas SET matricula=?, marca_modelo=?, tipo=?, combustivel=?, quilometragem=?,
-       estado=?, observacoes=?, infraestrutura_id=? WHERE id=?"
+       estado=?, observacoes=?, infraestrutura_id=?, zona_operacional_id=? WHERE id=?"
     );
-    mysqli_stmt_bind_param($stmt, "ssssisisi",
-      $matricula, $marca_modelo, $tipo, $combustivel, $km, $estado, $obs_val, $infra_val, $id
+    mysqli_stmt_bind_param($stmt, "ssssisiiii",
+      $matricula, $marca_modelo, $tipo, $combustivel, $km, $estado, $obs_val, $infra_val, $zona_val, $id
     );
 
     if (mysqli_stmt_execute($stmt)) {
@@ -108,11 +130,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                value="<?php echo h($matricula); ?>" required>
       </div>
 
-      <div class="col-12 col-md-8">
+      <div class="col-12 col-md-5">
         <label class="form-label form-label-soft">Marca/Modelo *</label>
         <input type="text" name="marca_modelo" class="form-control form-control-lg"
                value="<?php echo h($marca_modelo); ?>" required>
       </div>
+
+      <?php if (!is_gestor_zona()): ?>
+        <div class="col-12 col-md-3">
+          <label class="form-label form-label-soft">Zona Operacional</label>
+          <select name="zona_operacional_id" class="form-select form-select-lg" required>
+            <option value="">Selecione...</option>
+            <?php foreach ($zonas as $z): ?>
+              <option value="<?php echo (int)$z['id']; ?>" <?php echo ($zona_operacional_id == $z['id']) ? 'selected' : ''; ?>>
+                <?php echo h($z['nome']); ?>
+              </option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+      <?php endif; ?>
 
       <div class="col-12 col-md-4">
         <label class="form-label form-label-soft">Tipo</label>

@@ -11,6 +11,8 @@ function h($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 $id = (int)($_GET['id'] ?? 0);
 if ($id <= 0) { header("Location: index.php"); exit; }
 
+pode_ver_abastecimento($ligacao, $id);
+
 $__stmt = mysqli_prepare($ligacao, "SELECT id, posto, data_abastecimento FROM abastecimentos WHERE id=? LIMIT 1");
 mysqli_stmt_bind_param($__stmt, "i", $id);
 mysqli_stmt_execute($__stmt);
